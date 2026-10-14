@@ -1,0 +1,82 @@
+name: Build Freeify for iPhone
+
+# Run on demand so developing from Windows does not spend Mac build minutes
+# on every commit. This workflow must first be pushed to the default branch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: freeify-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check Xcode and project
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          plutil -lint Freeify/Info.plist Freeify.xcodeproj/project.pbxproj
+          xcodebuild -list -project Freeify.xcodeproj
+
+      - name: Build unsigned iPhone app
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcodebuild build \
+            -project Freeify.xcodeproj \
+            -scheme Freeify \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/Build.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            2>&1 | tee build/xcodebuild.log
+
+      - name: Package for sideloading
+        run: |
+          set -euo pipefail
+          app_path=build/DerivedData/Build/Products/Release-iphoneos/Freeify.app
+          test -x "$app_path/Freeify"
+          plutil -lint "$app_path/Info.plist"
+          mkdir -p build/package/Payload
+          ditto "$app_path" build/package/Payload/Freeify.app
+          cd build/package
+          /usr/bin/zip -qry ../Freeify-unsigned.ipa Payload
+          /usr/bin/unzip -t ../Freeify-unsigned.ipa
+
+      - name: Upload app package
+        uses: actions/upload-artifact@v7
+        with:
+          name: Freeify-unsigned-${{ github.run_number }}
+          path: build/Freeify-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Freeify-build-diagnostics-${{ github.run_number }}
+          path: |
+            build/xcodebuild.log
+            build/Build.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
