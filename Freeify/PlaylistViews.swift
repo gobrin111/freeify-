@@ -20,6 +20,7 @@ struct LikedSongsView: View {
                 } label: {
                     TrackRow(track: track)
                 }
+                .contextMenu { QueueMenuItems(track: track) }
                 .swipeActions(edge: .trailing) {
                     Button {
                         store.toggleLike(track, in: modelContext)
@@ -139,6 +140,7 @@ struct PlaylistDetailView: View {
                 } label: {
                     TrackRow(track: track)
                 }
+                .contextMenu { QueueMenuItems(track: track) }
                 .disabled(store.downloadingTrackID == track.id)
             }
             .onMove { from, to in
