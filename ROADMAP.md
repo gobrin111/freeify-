@@ -76,7 +76,7 @@ Build these in order. Each step builds on the ones before it.
 
 **Done when:** both actions work on the phone. A removed download frees its space, and the song downloads again from the library.
 
-### 4.2 Playback queue
+### 4.2 Playback queue (built, not yet checked on the phone)
 
 - [ ] When a song ends, play the next one from the list it was started from (library, search results, or playlist)
 - [ ] Next/previous in the app and on the lock screen. Previous restarts the song when more than ~3 seconds in

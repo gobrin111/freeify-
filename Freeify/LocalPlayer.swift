@@ -3,6 +3,10 @@ import Combine
 import Foundation
 import MediaPlayer
 
+enum RepeatMode {
+    case off, all, one
+}
+
 @MainActor
 final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var trackID: UUID?
@@ -11,8 +15,15 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
+    @Published private(set) var shuffle = false
+    @Published private(set) var repeatMode = RepeatMode.off
+    @Published private(set) var hasNext = false
     @Published var errorMessage: String?
 
+    // The list playback started from, and the order it plays in (shuffled or not).
+    private var source: [Track] = []
+    private var queue: [Track] = []
+    private var position = 0
     private var audio: AVAudioPlayer?
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
@@ -48,11 +59,88 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         commands.forEach { $0.0.removeTarget($0.1) }
     }
 
-    func load(_ track: Track) {
+    // Play a track, queueing the rest of the list it was picked from.
+    func play(_ track: Track, in list: [Track]) {
         if trackID == track.id {
             play()
             return
         }
+        source = list
+        queue = shuffle ? [track] + list.filter { $0.id != track.id }.shuffled() : list
+        position = queue.firstIndex { $0.id == track.id } ?? 0
+        if open(track) { play() }
+    }
+
+    func next() {
+        guard let index = neighbor(1) else { return }
+        move(to: index)
+    }
+
+    // Restart the song when more than a few seconds in, like Spotify; otherwise go back one.
+    func previous() {
+        guard (audio?.currentTime ?? 0) <= 3, let index = neighbor(-1) else {
+            seek(to: 0)
+            return
+        }
+        move(to: index)
+    }
+
+    func toggleShuffle() {
+        shuffle.toggle()
+        guard queue.indices.contains(position) else { return }
+        let current = queue[position]
+        queue = shuffle ? [current] + source.filter { $0.id != current.id }.shuffled() : source
+        position = queue.firstIndex { $0.id == current.id } ?? 0
+        updateNowPlaying()
+    }
+
+    func cycleRepeat() {
+        switch repeatMode {
+        case .off: repeatMode = .all
+        case .all: repeatMode = .one
+        case .one: repeatMode = .off
+        }
+        updateNowPlaying()
+    }
+
+    // Drop a track that is about to be deleted, so the queue never touches a deleted model.
+    func forget(_ track: Track) {
+        if trackID == track.id {
+            stop()
+            return
+        }
+        if let index = queue.firstIndex(where: { $0.id == track.id }), index < position {
+            position -= 1
+        }
+        queue.removeAll { $0.id == track.id }
+        source.removeAll { $0.id == track.id }
+        updateNowPlaying()
+    }
+
+    // The next downloaded track in the given direction, wrapping only with repeat all.
+    private func neighbor(_ step: Int) -> Int? {
+        guard !queue.isEmpty else { return nil }
+        var index = position
+        for _ in 0..<queue.count {
+            index += step
+            if !queue.indices.contains(index) {
+                guard repeatMode == .all else { return nil }
+                index = step > 0 ? 0 : queue.count - 1
+            }
+            // With repeat all, a lone downloaded song loops back to itself.
+            if (index != position || repeatMode == .all) && queue[index].isDownloaded { return index }
+        }
+        return nil
+    }
+
+    // Switch tracks without pausing first: deactivating the audio session between songs
+    // can let iOS suspend Freeify while the screen is locked.
+    private func move(to index: Int) {
+        position = index
+        if open(queue[index]) { play() }
+    }
+
+    private func open(_ track: Track) -> Bool {
         do {
             let next = try AVAudioPlayer(contentsOf: track.fileURL)
             audio?.stop()
@@ -64,9 +152,10 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             duration = next.duration
             elapsed = 0
             isPlaying = false
-            play()
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -108,6 +197,9 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func stop() {
         pause()
         audio = nil
+        source = []
+        queue = []
+        position = 0
         trackID = nil
         title = ""
         artist = nil
@@ -139,7 +231,10 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func updateNowPlaying() {
+        hasNext = audio != nil && neighbor(1) != nil
         let center = MPRemoteCommandCenter.shared()
+        center.nextTrackCommand.isEnabled = hasNext
+        center.previousTrackCommand.isEnabled = audio != nil
         center.playCommand.isEnabled = audio != nil
         center.pauseCommand.isEnabled = audio != nil
         center.togglePlayPauseCommand.isEnabled = audio != nil
@@ -157,9 +252,9 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func configureCommands() {
         let center = MPRemoteCommandCenter.shared()
-        center.nextTrackCommand.isEnabled = false
-        center.previousTrackCommand.isEnabled = false
         register(center.playCommand) { $0.play() }
+        register(center.nextTrackCommand) { $0.next() }
+        register(center.previousTrackCommand) { $0.previous() }
         register(center.pauseCommand) { $0.pause() }
         register(center.togglePlayPauseCommand) { $0.togglePlayback() }
         let token = center.changePlaybackPositionCommand.addTarget { [weak self] event in
@@ -207,9 +302,18 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor [weak self] in
             guard let self, self.audio === player else { return }
-            self.pause()
-            self.seek(to: 0)
-            if !flag { self.errorMessage = "Playback ended unexpectedly." }
+            if !flag {
+                self.pause()
+                self.errorMessage = "Playback ended unexpectedly."
+            } else if self.repeatMode == .one {
+                self.seek(to: 0)
+                self.play()
+            } else if let index = self.neighbor(1) {
+                self.move(to: index)
+            } else {
+                self.pause()
+                self.seek(to: 0)
+            }
         }
     }
 

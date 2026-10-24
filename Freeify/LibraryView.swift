@@ -194,20 +194,11 @@ struct LibraryView: View {
 
     private var playbackControls: some View {
         VStack(spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(player.title).font(.headline).lineLimit(1)
-                    Text(player.artist ?? "Saved in Freeify").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    player.togglePlayback()
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 44))
-                }
-                .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(player.title).font(.headline).lineLimit(1)
+                Text(player.artist ?? "Saved in Freeify").font(.caption).foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Slider(
                 value: Binding(get: { player.elapsed }, set: { player.seek(to: $0) }),
                 in: 0...max(player.duration, 0.01)
@@ -220,9 +211,58 @@ struct LibraryView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            HStack {
+                Button {
+                    player.toggleShuffle()
+                } label: {
+                    Image(systemName: "shuffle")
+                        .foregroundStyle(player.shuffle ? Color.mint : .secondary)
+                }
+                .accessibilityLabel(player.shuffle ? "Shuffle on" : "Shuffle off")
+                Spacer()
+                Button {
+                    player.previous()
+                } label: {
+                    Image(systemName: "backward.fill").font(.title2)
+                }
+                .accessibilityLabel("Previous")
+                Spacer()
+                Button {
+                    player.togglePlayback()
+                } label: {
+                    Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 44))
+                }
+                .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                Spacer()
+                Button {
+                    player.next()
+                } label: {
+                    Image(systemName: "forward.fill").font(.title2)
+                }
+                .disabled(!player.hasNext)
+                .accessibilityLabel("Next")
+                Spacer()
+                Button {
+                    player.cycleRepeat()
+                } label: {
+                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
+                        .foregroundStyle(player.repeatMode == .off ? .secondary : Color.mint)
+                }
+                .accessibilityLabel(repeatLabel)
+            }
+            .buttonStyle(.borderless)
         }
         .padding()
         .background(.regularMaterial)
+    }
+
+    private var repeatLabel: String {
+        switch player.repeatMode {
+        case .off: "Repeat off"
+        case .all: "Repeat all"
+        case .one: "Repeat one"
+        }
     }
 
     private func timeLabel(_ seconds: TimeInterval) -> String {
@@ -260,7 +300,7 @@ struct LibraryView: View {
 
     private func select(_ track: Track) {
         if track.isDownloaded {
-            player.load(track)
+            player.play(track, in: filteredTracks.filter { $0.isDownloaded })
         } else {
             redownload(track)
         }
@@ -281,7 +321,7 @@ struct LibraryView: View {
     }
 
     private func remove(_ track: Track) {
-        if player.trackID == track.id { player.stop() }
+        player.forget(track)
         let fileURL = track.fileURL
         modelContext.delete(track)
         do {
