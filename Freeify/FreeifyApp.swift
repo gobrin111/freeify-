@@ -8,6 +8,6 @@ struct FreeifyApp: App {
         WindowGroup {
             LibraryView()
         }
-        .modelContainer(for: Track.self)
+        .modelContainer(for: [Track.self, Playlist.self])
     }
 }

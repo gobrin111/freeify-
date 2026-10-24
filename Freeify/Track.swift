@@ -12,6 +12,7 @@ final class Track {
     // Set for YouTube downloads so the audio can be downloaded again after "Remove download".
     var youtubeID: String?
     var isDownloaded = true
+    var likedAt: Date?
 
     init(title: String, artist: String?, filename: String, youtubeID: String?) {
         id = UUID()
@@ -24,6 +25,22 @@ final class Track {
 
     var fileURL: URL {
         AudioFiles.directory.appendingPathComponent(filename)
+    }
+}
+
+@Model
+final class Playlist {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    // Songs in order. A song can be in many playlists without being stored twice.
+    var trackIDs: [UUID]
+    var createdAt: Date
+
+    init(name: String, trackIDs: [UUID] = []) {
+        id = UUID()
+        self.name = name
+        self.trackIDs = trackIDs
+        createdAt = Date()
     }
 }
 

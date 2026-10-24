@@ -12,6 +12,7 @@ struct LibraryView: View {
     @State private var isImporting = false
     @State private var importError: String?
     @State private var tracksToRemove: [Track] = []
+    @State private var tracksToAdd: [Track] = []
     @State private var searchText = ""
     @State private var editMode = EditMode.inactive
     @State private var selection = Set<UUID>()
@@ -59,6 +60,12 @@ struct LibraryView: View {
                 YouTubeSearchView(libraryIDs: Set(tracks.compactMap { $0.youtubeID })) { saved in
                     try store.add(saved, in: modelContext)
                 }
+            }
+            .sheet(isPresented: Binding(
+                get: { !tracksToAdd.isEmpty },
+                set: { if !$0 { tracksToAdd = [] } }
+            )) {
+                AddToPlaylistView(tracks: tracksToAdd)
             }
             .overlay {
                 if isImporting {
@@ -126,6 +133,20 @@ struct LibraryView: View {
 
     private var songList: some View {
         List(selection: $selection) {
+            if searchText.isEmpty && !editMode.isEditing {
+                Section {
+                    NavigationLink {
+                        LikedSongsView()
+                    } label: {
+                        Label("Liked Songs", systemImage: "heart.fill")
+                    }
+                    NavigationLink {
+                        PlaylistsView()
+                    } label: {
+                        Label("Playlists", systemImage: "music.note.list")
+                    }
+                }
+            }
             Section {
                 ForEach(filteredTracks) { track in
                     Group {
@@ -140,6 +161,21 @@ struct LibraryView: View {
                         }
                     }
                     .tag(track.id)
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            store.toggleLike(track, in: modelContext)
+                        } label: {
+                            Label(track.likedAt == nil ? "Like" : "Unlike",
+                                  systemImage: track.likedAt == nil ? "heart" : "heart.slash")
+                        }
+                        .tint(.pink)
+                        Button {
+                            tracksToAdd = [track]
+                        } label: {
+                            Label("Add to Playlist", systemImage: "text.badge.plus")
+                        }
+                        .tint(.indigo)
+                    }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
                             tracksToRemove = [track]
@@ -177,6 +213,15 @@ struct LibraryView: View {
                     selection = []
                     editMode = .inactive
                 }
+            }
+            ToolbarItem(placement: .bottomBar) {
+                Button {
+                    tracksToAdd = tracks.filter { selection.contains($0.id) }
+                } label: {
+                    Label("Add to Playlist", systemImage: "text.badge.plus")
+                        .labelStyle(.titleAndIcon)
+                }
+                .disabled(selection.isEmpty)
             }
         } else {
             ToolbarItem(placement: .topBarLeading) {

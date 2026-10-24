@@ -15,6 +15,7 @@
 		A10000000000000000000008 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* LibraryStore.swift */; };
 		A10000000000000000000009 /* TrackRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* TrackRow.swift */; };
 		A1000000000000000000000A /* PlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* PlayerViews.swift */; };
+		A1000000000000000000000B /* PlaylistViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* PlaylistViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 		A20000000000000000000008 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStore.swift; sourceTree = "<group>"; };
 		A20000000000000000000009 /* TrackRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackRow.swift; sourceTree = "<group>"; };
 		A2000000000000000000000A /* PlayerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViews.swift; sourceTree = "<group>"; };
+		A2000000000000000000000B /* PlaylistViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,6 +53,7 @@
 				A20000000000000000000008 /* LibraryStore.swift */,
 				A20000000000000000000009 /* TrackRow.swift */,
 				A2000000000000000000000A /* PlayerViews.swift */,
+				A2000000000000000000000B /* PlaylistViews.swift */,
 				A20000000000000000000005 /* Info.plist */,
 			);
 			path = Freeify;
@@ -110,7 +113,7 @@
 		A30000000000000000000002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A);
+			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A, A1000000000000000000000B);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

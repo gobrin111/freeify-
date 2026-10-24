@@ -31,6 +31,12 @@ struct TrackRow: View {
                 }
             }
             Spacer()
+            if track.likedAt != nil {
+                Image(systemName: "heart.fill")
+                    .font(.caption)
+                    .foregroundStyle(.pink)
+                    .accessibilityLabel("Liked")
+            }
             if store.downloadingTrackID != track.id {
                 Image(systemName: track.isDownloaded ? "play.circle" : "arrow.down.circle")
                     .foregroundStyle(.tint)

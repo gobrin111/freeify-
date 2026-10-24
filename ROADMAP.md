@@ -85,7 +85,7 @@ Build these in order. Each step builds on the ones before it.
 
 **Done when:** a library plays through with the screen locked, using lock-screen next/previous, with shuffle and repeat working.
 
-### 4.3 Playlists
+### 4.3 Playlists (built, not yet checked on the phone)
 
 - [ ] Create, rename, and delete playlists
 - [ ] Add and remove songs (one song can be in many playlists without being stored twice), and reorder them

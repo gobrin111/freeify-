@@ -47,6 +47,10 @@ final class LibraryStore: ObservableObject {
 
     func remove(_ tracks: [Track], in context: ModelContext) {
         let fileURLs = tracks.map { $0.fileURL }
+        let ids = Set(tracks.map { $0.id })
+        for playlist in (try? context.fetch(FetchDescriptor<Playlist>())) ?? [] {
+            playlist.trackIDs.removeAll { ids.contains($0) }
+        }
         for track in tracks {
             player.forget(track)
             context.delete(track)
@@ -54,6 +58,37 @@ final class LibraryStore: ObservableObject {
         do {
             try context.save()
             fileURLs.forEach { try? FileManager.default.removeItem(at: $0) }
+        } catch {
+            context.rollback()
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func toggleLike(_ track: Track, in context: ModelContext) {
+        track.likedAt = track.likedAt == nil ? Date() : nil
+        save(context)
+    }
+
+    func createPlaylist(named name: String, with tracks: [Track] = [], in context: ModelContext) {
+        context.insert(Playlist(name: name, trackIDs: tracks.map { $0.id }))
+        save(context)
+    }
+
+    // Songs already in the playlist aren't added again.
+    func add(_ tracks: [Track], to playlist: Playlist, in context: ModelContext) {
+        let existing = Set(playlist.trackIDs)
+        playlist.trackIDs += tracks.map { $0.id }.filter { !existing.contains($0) }
+        save(context)
+    }
+
+    func delete(_ playlist: Playlist, in context: ModelContext) {
+        context.delete(playlist)
+        save(context)
+    }
+
+    func save(_ context: ModelContext) {
+        do {
+            try context.save()
         } catch {
             context.rollback()
             errorMessage = error.localizedDescription
