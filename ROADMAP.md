@@ -107,7 +107,7 @@ Build these in order. Each step builds on the ones before it.
 
 ## Later, on request
 
-- Remember shuffle/repeat and the last song after the app closes
+- [ ] Remember shuffle/repeat and the last song after the app closes (built, not yet checked on the phone)
 - Visual polish
 
 ## Out of scope

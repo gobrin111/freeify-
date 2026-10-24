@@ -3,8 +3,16 @@ import Combine
 import Foundation
 import MediaPlayer
 
-enum RepeatMode {
+enum RepeatMode: String {
     case off, all, one
+}
+
+// Shuffle, repeat, and the last song and position, kept across launches.
+private enum Saved {
+    static let shuffle = "player.shuffle"
+    static let repeatMode = "player.repeatMode"
+    static let trackID = "player.lastTrackID"
+    static let time = "player.lastTime"
 }
 
 @MainActor
@@ -37,6 +45,9 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     override init() {
         super.init()
+        let defaults = UserDefaults.standard
+        shuffle = defaults.bool(forKey: Saved.shuffle)
+        repeatMode = defaults.string(forKey: Saved.repeatMode).flatMap { RepeatMode(rawValue: $0) } ?? .off
         configureCommands()
         let center = NotificationCenter.default
         observers.append(center.addObserver(
@@ -75,6 +86,22 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         position = queue.firstIndex { $0.id == track.id } ?? 0
         playingFromUpNext = false
         if open(track) { play() }
+    }
+
+    var savedTrackID: UUID? {
+        UserDefaults.standard.string(forKey: Saved.trackID).flatMap { UUID(uuidString: $0) }
+    }
+
+    // Load the last song paused at its saved position, without starting playback.
+    func restore(_ track: Track, in list: [Track]) {
+        guard audio == nil else { return }
+        source = list
+        queue = shuffle ? [track] + list.filter { $0.id != track.id }.shuffled() : list
+        position = queue.firstIndex { $0.id == track.id } ?? 0
+        guard open(track), let audio else { return }
+        audio.currentTime = min(UserDefaults.standard.double(forKey: Saved.time), audio.duration)
+        elapsed = audio.currentTime
+        updateNowPlaying()
     }
 
     func next() {
@@ -157,6 +184,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func toggleShuffle() {
         shuffle.toggle()
+        UserDefaults.standard.set(shuffle, forKey: Saved.shuffle)
         guard queue.indices.contains(position) else { return }
         let playing = queue[position]
         queue = shuffle ? [playing] + source.filter { $0.id != playing.id }.shuffled() : source
@@ -170,6 +198,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         case .all: repeatMode = .one
         case .one: repeatMode = .off
         }
+        UserDefaults.standard.set(repeatMode.rawValue, forKey: Saved.repeatMode)
         updateNowPlaying()
     }
 
@@ -228,6 +257,8 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             next.delegate = self
             trackID = track.id
             current = track
+            UserDefaults.standard.set(track.id.uuidString, forKey: Saved.trackID)
+            UserDefaults.standard.set(0.0, forKey: Saved.time)
             nowPlayingArtwork = Artwork.image(for: track).map { image in
                 MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             }
@@ -272,6 +303,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         audio?.pause()
         isPlaying = false
         elapsed = audio?.currentTime ?? elapsed
+        UserDefaults.standard.set(elapsed, forKey: Saved.time)
         timer?.invalidate()
         updateNowPlaying()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -289,6 +321,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         trackID = nil
         current = nil
         nowPlayingArtwork = nil
+        UserDefaults.standard.removeObject(forKey: Saved.trackID)
         title = ""
         artist = nil
         elapsed = 0
@@ -314,6 +347,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.elapsed = self.audio?.currentTime ?? 0
+                UserDefaults.standard.set(self.elapsed, forKey: Saved.time)
             }
         }
     }

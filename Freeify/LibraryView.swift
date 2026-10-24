@@ -136,6 +136,14 @@ struct LibraryView: View {
             .task(id: tracks.map { "\($0.filename)\($0.isDownloaded)" }) {
                 storageBytes = AudioFiles.usedBytes()
             }
+            .task {
+                // Reopen where playback left off, paused.
+                guard store.player.current == nil,
+                      let id = store.player.savedTrackID,
+                      let track = tracks.first(where: { $0.id == id && $0.isDownloaded })
+                else { return }
+                store.player.restore(track, in: filteredTracks.filter { $0.isDownloaded })
+            }
         }
         .safeAreaInset(edge: .bottom) { PlayerBar() }
         .modifier(PlayerErrorAlert())

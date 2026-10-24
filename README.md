@@ -1,23 +1,29 @@
 # Freeify
 
-A personal iPhone music app written in Swift and SwiftUI. The first milestone
-establishes a Windows-to-iPhone build path and local audio playback.
+A personal iPhone music app written in Swift and SwiftUI: search YouTube Music,
+save songs on the phone, and play them offline, including with the screen locked.
+Progress and next steps are tracked in [ROADMAP.md](ROADMAP.md).
 
-## Current scope
+## Features
 
-- Import audio using the iPhone Files picker. Freeify copies it into its own
-  storage, validates that it can be opened, and saves library metadata with SwiftData.
-- Search titles in Freeify's saved library. Audio lives in the app's private
-  Application Support/Audio directory; Freeify does not scan the phone's files.
-  **Add from Files** opens Apple's picker only to select a file to copy into Freeify.
-- Play, pause, and seek imported tracks without a network connection.
-- Background audio and lock-screen controls, with interruption handling and
-  pause when headphones disconnect.
-- Build an unsigned iPhone `.ipa` with GitHub's temporary macOS runner.
-- **Search YouTube** (feasibility test): search YouTube on the phone, tap a
-  result to download its AAC audio stream, and save it into the library like an
-  imported file. This uses [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned
-  to a specific commit. It is unofficial and can break when YouTube changes.
+- **Search YouTube Music** (globe button): searches the Songs tab and downloads a
+  song's audio with [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned to a
+  specific commit, plus its cover art. This is unofficial and can break when
+  YouTube changes; `ROADMAP.md` notes what to check first.
+- **Add from Files**: copy an audio file into Freeify. Freeify never scans the
+  phone's files; audio lives in its private Application Support/Audio folder.
+- **Library**: search by title or artist, sort by recently added, title, or
+  artist, and see how much space saved songs use.
+- **Removing songs**: swipe left to remove a song, or to remove only its download
+  (YouTube songs stay listed and download again with a tap). Select several songs
+  from the More (…) menu.
+- **Liked Songs and playlists**: swipe right or long-press a song to like it or
+  add it to a playlist. Playlists can be renamed and reordered.
+- **Playback**: the list a song is played from becomes the queue. Next/previous,
+  shuffle, and repeat work in the app and on the lock screen. Long-press a song
+  for Play Next or Add to Queue. Tap the player bar for the full-screen player
+  and queue.
+- Shuffle, repeat, and the last song are remembered after Freeify closes.
 
 There are no music service credentials, backend, or cloud library sync.
 
@@ -87,33 +93,15 @@ seven days unless refreshed. Keep this in mind before extended offline travel.
 See [AltStore's refresh documentation](https://faq.altstore.io/altstore-classic/your-altstore).
 Compatibility with your exact iOS release must be checked during installation.
 
-## First-device checks
+## Phone checks
 
-The user has confirmed that the existing build installs and plays imported audio.
-The updated library search still needs a Mac build and device verification.
-After installing:
+After installing a new build:
 
-1. Import an MP3 or M4A from Files. The title should appear in the library.
-2. Close and reopen Freeify. The imported track should still be listed and playable.
-3. Enable airplane mode, turn off Wi-Fi, and start the track. It should play offline.
-4. Lock the screen for at least a minute. Audio should continue, and the lock-screen
-   play/pause and seek controls should work. Locking the screen is supported;
-   force-quitting Freeify stops playback.
-5. Disconnect headphones during playback. Audio should pause.
-6. Test an interruption such as a phone call. Resume only when iOS permits it.
-7. Try an invalid audio file. The app should show an error without adding a broken
-   library entry. Import two files with the same name; both should remain playable.
-8. Search for an imported title in **Search Freeify library**. Partial titles and
-   different capitalization should match; an unknown title should show **No matching
-   songs**. Clearing the search (or entering only spaces) should restore the library.
-9. Confirm an audio file that has not been imported never appears in library search.
-   Add it with **Add from Files**, then confirm it is searchable and playable after
-   reopening Freeify. Existing imported tracks should still work without reimporting.
-
-10. Tap **Search YouTube**, search for a song, and tap a result. It should download,
-    close the sheet, and appear in the library. Play it in airplane mode and with
-    the screen locked. If it fails, note the full error message.
-
-The milestone passes when the GitHub build creates the `.ipa`, it installs, and
-these checks succeed on the phone. YouTube integration, playlists, deletion,
-and visual polish are outside this initial build milestone.
+1. Search YouTube Music for a song title and download a result. Its cover art,
+   title, and artist should appear in the library and on the lock screen.
+2. Play it in airplane mode with the screen locked; lock-screen controls should work.
+3. Let a song finish; the next one should play. Try shuffle and repeat.
+4. Long-press a song, tap Play Next, and open the queue from the full-screen player.
+5. Like a song and add it to a playlist; both should persist after reopening Freeify.
+6. Remove a download and download it again from the library; remove a song entirely.
+7. Close and reopen Freeify; the last song should be paused where it stopped.
