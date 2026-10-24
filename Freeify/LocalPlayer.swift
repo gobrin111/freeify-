@@ -7,6 +7,7 @@ import MediaPlayer
 final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var trackID: UUID?
     @Published private(set) var title = ""
+    @Published private(set) var artist: String?
     @Published private(set) var isPlaying = false
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
@@ -59,6 +60,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             next.delegate = self
             trackID = track.id
             title = track.title
+            artist = track.artist
             duration = next.duration
             elapsed = 0
             isPlaying = false
@@ -102,6 +104,19 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
+    // Unload the current track, e.g. when it is removed from the library.
+    func stop() {
+        pause()
+        audio = nil
+        trackID = nil
+        title = ""
+        artist = nil
+        elapsed = 0
+        duration = 0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        updateNowPlaying()
+    }
+
     func togglePlayback() {
         if isPlaying { pause() } else { play() }
     }
@@ -132,6 +147,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         guard audio != nil else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: title,
+            MPMediaItemPropertyArtist: artist ?? "",
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: audio?.currentTime ?? 0,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,

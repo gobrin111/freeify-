@@ -4,7 +4,7 @@ import YouTubeKit
 
 @MainActor
 struct YouTubeSearchView: View {
-    let onDownloaded: ((title: String, filename: String)) throws -> Void
+    let onDownloaded: (SavedAudio) throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var results: [YTVideo] = []
@@ -22,10 +22,11 @@ struct YouTubeSearchView: View {
                 } label: {
                     HStack(spacing: 14) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(video.title ?? "Untitled")
+                            let name = SongName.parse(video.title ?? "Untitled", channel: video.channel?.name)
+                            Text(name.title)
                                 .foregroundStyle(.primary)
                                 .lineLimit(2)
-                            Text([video.channel?.name, video.timeLength].compactMap { $0 }.joined(separator: " · "))
+                            Text([name.artist, video.timeLength].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             if downloadingID == video.videoId {
@@ -97,7 +98,7 @@ struct YouTubeSearchView: View {
                 results = try await YouTubeSource.search(text)
                 hasSearched = true
             } catch {
-                errorMessage = describe(error)
+                errorMessage = YouTubeSource.describe(error)
             }
         }
     }
@@ -115,14 +116,9 @@ struct YouTubeSearchView: View {
                 try onDownloaded(saved)
                 dismiss()
             } catch {
-                errorMessage = describe(error)
+                errorMessage = YouTubeSource.describe(error)
             }
         }
-    }
-
-    // YouTubeKit errors aren't localized; show their details while this path is being tested.
-    private func describe(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? String(describing: error)
     }
 }
 
@@ -202,11 +198,19 @@ enum YouTubeSource {
             || (!channel.isEmpty && query.localizedCaseInsensitiveContains(channel))
     }
 
+    // Download a song again from its saved video ID.
+    static func download(
+        videoID: String,
+        onProgress: @escaping @Sendable (Double) -> Void
+    ) async throws -> SavedAudio {
+        try await download(YTVideo(videoId: videoID), onProgress: onProgress)
+    }
+
     // Use YouTube's AAC (audio/mp4) stream; AVAudioPlayer can't play its WebM/Opus formats.
     static func download(
         _ video: YTVideo,
         onProgress: @escaping @Sendable (Double) -> Void
-    ) async throws -> (title: String, filename: String) {
+    ) async throws -> SavedAudio {
         let infos = try await video.fetchStreamingInfosWithDownloadFormatsThrowing(youtubeModel: model)
         let format = infos.downloadFormats
             .compactMap { $0 as? AudioOnlyFormat }
@@ -233,10 +237,13 @@ enum YouTubeSource {
             throw SourceError(errorDescription: "YouTube refused the download (HTTP \(status)).")
         }
 
-        let title = video.title ?? infos.videoInfos.title ?? "Untitled"
+        let name = SongName.parse(
+            video.title ?? infos.videoInfos.title ?? "Untitled",
+            channel: video.channel?.name ?? infos.videoInfos.channel?.name
+        )
         do {
             return try await Task.detached(priority: .userInitiated) {
-                try AudioFiles.saveDownload(temporary, title: title)
+                try AudioFiles.saveDownload(temporary, title: name.title, artist: name.artist, youtubeID: video.videoId)
             }.value
         } catch {
             try? FileManager.default.removeItem(at: temporary)
@@ -267,6 +274,11 @@ enum YouTubeSource {
                 self.onProgress(Double(percent) / 100)
             }
         }
+    }
+
+    // YouTubeKit errors aren't localized; show their details so failures can be diagnosed.
+    static func describe(_ error: Error) -> String {
+        (error as? LocalizedError)?.errorDescription ?? String(describing: error)
     }
 
     struct SourceError: LocalizedError {

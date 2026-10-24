@@ -49,8 +49,8 @@ Starts only after milestone 2 succeeds.
 
 - [x] Search screen showing source results
 - [ ] Song-focused results: normal YouTube search (YouTube Music misses remixes and fan uploads), hiding Shorts, live streams, and videos outside 1–15 min, with likely songs listed first (built, not yet checked on the phone)
-- [ ] Result details (title, artist, duration)
-- [ ] Download progress bar (built, not yet checked on the phone)
+- [ ] Result details: song title and artist split from YouTube titles ("Artist - Song (Official Audio)"), artist saved with downloads and shown in the library, player bar, and lock screen (built, not yet checked on the phone)
+- [x] Download progress bar
 - [ ] Same search returns consistent results: one visitor ID kept and sent with every search (built, not yet checked on the phone)
 - [ ] Clear error messages (YouTubeKit errors currently show raw details)
 - [x] Downloaded tracks appear in the existing library and play offline
@@ -61,7 +61,7 @@ Starts only after milestone 2 succeeds.
 
 Build these in order. Each step builds on the ones before it.
 
-### 4.1 Removing songs
+### 4.1 Removing songs (in progress: first five items built, not yet checked on the phone)
 
 "Remove download" and "remove from library" are separate actions:
 
@@ -101,7 +101,7 @@ Build these in order. Each step builds on the ones before it.
 
 ### 4.5 Details and player
 
-- [ ] Save the artist and the YouTube thumbnail with each download. Show them in lists and on the lock screen
+- [ ] Save the YouTube thumbnail with each download. Show it in lists and on the lock screen (artist is done in milestone 3)
 - [ ] Sort the library by recently added, title, or artist
 - [ ] Full-screen player (art, seek bar, shuffle/repeat). Opens by tapping the bottom bar
 

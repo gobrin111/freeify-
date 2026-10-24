@@ -6,18 +6,57 @@ import SwiftData
 final class Track {
     @Attribute(.unique) var id: UUID
     var title: String
+    var artist: String?
     var filename: String
     var addedAt: Date
+    // Set for YouTube downloads so the audio can be downloaded again after "Remove download".
+    var youtubeID: String?
+    var isDownloaded = true
 
-    init(title: String, filename: String) {
+    init(title: String, artist: String?, filename: String, youtubeID: String?) {
         id = UUID()
         self.title = title
+        self.artist = artist
         self.filename = filename
         addedAt = Date()
+        self.youtubeID = youtubeID
     }
 
     var fileURL: URL {
         AudioFiles.directory.appendingPathComponent(filename)
+    }
+}
+
+typealias SavedAudio = (title: String, artist: String?, filename: String, youtubeID: String?)
+
+enum SongName {
+    // Split names like "Artist - Song (Official Audio)" into a song title and artist.
+    // Falls back to the uploader's channel for the artist.
+    static func parse(_ raw: String, channel: String? = nil) -> (title: String, artist: String?) {
+        let title = raw
+            .replacingOccurrences(of: #"\s*#\S+"#, with: "", options: .regularExpression)
+            // Drop labels like "(Official Audio)" or "[Lyric Video]"; keep "(feat. …)" and "(Remix)".
+            .replacingOccurrences(
+                of: #"\s*[\(\[]\s*(official|lyrics?|audio|video|music video|visuali[sz]er|mv)\b[^\)\]]*[\)\]]"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .trimmingCharacters(in: .whitespaces)
+        let channelArtist = channel?
+            .replacingOccurrences(of: " - Topic", with: "")
+            .replacingOccurrences(of: #"VEVO$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+
+        // "Artist - Topic" channels already use the plain song title.
+        if channel?.hasSuffix(" - Topic") != true {
+            for separator in [" - ", " – ", " — "] {
+                guard let range = title.range(of: separator) else { continue }
+                let artist = title[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+                let song = title[range.upperBound...].trimmingCharacters(in: .whitespaces)
+                if !artist.isEmpty && !song.isEmpty { return (song, artist) }
+            }
+        }
+        return (title.isEmpty ? raw : title, channelArtist?.isEmpty == false ? channelArtist : nil)
     }
 }
 
@@ -27,7 +66,7 @@ enum AudioFiles {
     }
 
     // Return values, rather than a SwiftData model, across the background task boundary.
-    static func importFile(_ source: URL) throws -> (title: String, filename: String) {
+    static func importFile(_ source: URL) throws -> SavedAudio {
         let hasAccess = source.startAccessingSecurityScopedResource()
         defer {
             if hasAccess { source.stopAccessingSecurityScopedResource() }
@@ -36,15 +75,16 @@ enum AudioFiles {
         let filename = try store(pathExtension: source.pathExtension) { destination in
             try FileManager.default.copyItem(at: source, to: destination)
         }
-        return (source.deletingPathExtension().lastPathComponent, filename)
+        let name = SongName.parse(source.deletingPathExtension().lastPathComponent)
+        return (name.title, name.artist, filename, nil)
     }
 
     // Move a finished download into Freeify's audio folder.
-    static func saveDownload(_ temporary: URL, title: String) throws -> (title: String, filename: String) {
+    static func saveDownload(_ temporary: URL, title: String, artist: String?, youtubeID: String) throws -> SavedAudio {
         let filename = try store(pathExtension: "m4a") { destination in
             try FileManager.default.moveItem(at: temporary, to: destination)
         }
-        return (title, filename)
+        return (title, artist, filename, youtubeID)
     }
 
     private static func store(pathExtension: String, place: (URL) throws -> Void) throws -> String {

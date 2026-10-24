@@ -11,12 +11,18 @@ struct LibraryView: View {
     @State private var showingYouTube = false
     @State private var isImporting = false
     @State private var importError: String?
+    @State private var libraryError: String?
+    @State private var trackToRemove: Track?
+    @State private var downloadingTrackID: UUID?
+    @State private var downloadProgress: Double?
     @State private var searchText = ""
 
     private var filteredTracks: [Track] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return tracks }
-        return tracks.filter { $0.title.localizedStandardContains(query) }
+        return tracks.filter {
+            $0.title.localizedStandardContains(query) || ($0.artist?.localizedStandardContains(query) ?? false)
+        }
     }
 
     var body: some View {
@@ -35,12 +41,12 @@ struct LibraryView: View {
                     ContentUnavailableView {
                         Label("No matching songs", systemImage: "magnifyingglass")
                     } description: {
-                        Text("Try another title, or add a song from Files to your Freeify library.")
+                        Text("Try another title or artist, or add a song to your Freeify library.")
                     }
                 } else {
                     List(filteredTracks) { track in
                         Button {
-                            player.load(track)
+                            select(track)
                         } label: {
                             HStack(spacing: 14) {
                                 Image(systemName: player.trackID == track.id ? "waveform" : "music.note")
@@ -50,16 +56,45 @@ struct LibraryView: View {
                                     Text(track.title)
                                         .foregroundStyle(.primary)
                                         .lineLimit(2)
-                                    Text("Saved in Freeify · Offline")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    if downloadingTrackID == track.id {
+                                        ProgressView(value: downloadProgress ?? 0)
+                                        Text(downloadProgress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                    } else if !track.isDownloaded {
+                                        Text([track.artist, "Not downloaded"].compactMap { $0 }.joined(separator: " · "))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    } else {
+                                        Text(track.artist ?? "Saved in Freeify · Offline")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                                 Spacer()
-                                Image(systemName: "play.circle")
-                                    .foregroundStyle(.tint)
+                                if downloadingTrackID != track.id {
+                                    Image(systemName: track.isDownloaded ? "play.circle" : "arrow.down.circle")
+                                        .foregroundStyle(.tint)
+                                }
                             }
                             .padding(.vertical, 6)
                         }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                trackToRemove = track
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                            if track.youtubeID != nil && track.isDownloaded {
+                                Button {
+                                    removeDownload(track)
+                                } label: {
+                                    Label("Remove Download", systemImage: "arrow.down.circle.dotted")
+                                }
+                                .tint(.orange)
+                            }
+                        }
+                        .disabled(downloadingTrackID == track.id)
                     }
                 }
             }
@@ -113,6 +148,29 @@ struct LibraryView: View {
             } message: {
                 Text(importError ?? "")
             }
+            .confirmationDialog(
+                "Remove from library?",
+                isPresented: Binding(
+                    get: { trackToRemove != nil },
+                    set: { if !$0 { trackToRemove = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: trackToRemove
+            ) { track in
+                Button("Remove “\(track.title)”", role: .destructive) { remove(track) }
+            } message: { track in
+                Text(track.youtubeID == nil
+                    ? "This deletes Freeify’s copy of the audio. To get it back, add it again."
+                    : "This deletes the song and its audio. You can find it again in Search YouTube.")
+            }
+            .alert("Couldn’t update library", isPresented: Binding(
+                get: { libraryError != nil },
+                set: { if !$0 { libraryError = nil } }
+            )) {
+                Button("OK", role: .cancel) { libraryError = nil }
+            } message: {
+                Text(libraryError ?? "")
+            }
             .alert("Couldn’t play audio", isPresented: Binding(
                 get: { player.errorMessage != nil },
                 set: { if !$0 { player.errorMessage = nil } }
@@ -139,7 +197,7 @@ struct LibraryView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(player.title).font(.headline).lineLimit(1)
-                    Text("Saved in Freeify").font(.caption).foregroundStyle(.secondary)
+                    Text(player.artist ?? "Saved in Freeify").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button {
@@ -187,8 +245,8 @@ struct LibraryView: View {
         }
     }
 
-    private func addTrack(_ saved: (title: String, filename: String)) throws {
-        let track = Track(title: saved.title, filename: saved.filename)
+    private func addTrack(_ saved: SavedAudio) throws {
+        let track = Track(title: saved.title, artist: saved.artist, filename: saved.filename, youtubeID: saved.youtubeID)
         let savedURL = track.fileURL
         modelContext.insert(track)
         do {
@@ -197,6 +255,66 @@ struct LibraryView: View {
             modelContext.rollback()
             try? FileManager.default.removeItem(at: savedURL)
             throw error
+        }
+    }
+
+    private func select(_ track: Track) {
+        if track.isDownloaded {
+            player.load(track)
+        } else {
+            redownload(track)
+        }
+    }
+
+    // Delete only the audio file; the song stays listed and can be downloaded again.
+    private func removeDownload(_ track: Track) {
+        if player.trackID == track.id { player.stop() }
+        let fileURL = track.fileURL
+        track.isDownloaded = false
+        do {
+            try modelContext.save()
+            try? FileManager.default.removeItem(at: fileURL)
+        } catch {
+            modelContext.rollback()
+            libraryError = error.localizedDescription
+        }
+    }
+
+    private func remove(_ track: Track) {
+        if player.trackID == track.id { player.stop() }
+        let fileURL = track.fileURL
+        modelContext.delete(track)
+        do {
+            try modelContext.save()
+            try? FileManager.default.removeItem(at: fileURL)
+        } catch {
+            modelContext.rollback()
+            libraryError = error.localizedDescription
+        }
+    }
+
+    private func redownload(_ track: Track) {
+        guard let videoID = track.youtubeID, downloadingTrackID == nil else { return }
+        downloadingTrackID = track.id
+        downloadProgress = nil
+        Task { @MainActor in
+            defer { downloadingTrackID = nil }
+            do {
+                let saved = try await YouTubeSource.download(videoID: videoID) { value in
+                    Task { @MainActor in downloadProgress = value }
+                }
+                track.filename = saved.filename
+                track.isDownloaded = true
+                do {
+                    try modelContext.save()
+                } catch {
+                    modelContext.rollback()
+                    try? FileManager.default.removeItem(at: AudioFiles.directory.appendingPathComponent(saved.filename))
+                    throw error
+                }
+            } catch {
+                libraryError = YouTubeSource.describe(error)
+            }
         }
     }
 }
