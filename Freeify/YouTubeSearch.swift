@@ -109,7 +109,34 @@ struct YouTubeSearchView: View {
 }
 
 enum YouTubeSource {
-    private static let model = YouTubeModel()
+    // Client settings follow yt-dlp's visionos client.
+    private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+
+    private static let model: YouTubeModel = {
+        let model = YouTubeModel()
+        // YouTubeKit's default iOS client needs a proof-of-origin token Freeify can't create,
+        // so its audio links return HTTP 403. The visionOS client's links work without one
+        // and without running YouTube's JavaScript player.
+        model.customHeaders[.videoInfosWithDownloadFormats] = HeadersList(
+            url: URL(string: "https://www.youtube.com/youtubei/v1/player")!,
+            method: .POST,
+            headers: [
+                .init(name: "Content-Type", content: "application/json"),
+                .init(name: "User-Agent", content: YouTubeSource.userAgent),
+                .init(name: "Origin", content: "https://www.youtube.com"),
+                .init(name: "X-Youtube-Client-Name", content: "101"),
+                .init(name: "X-Youtube-Client-Version", content: "1.02")
+            ],
+            customHeaders: ["X-Goog-Visitor-Id": .visitorData],
+            addQueryAfterParts: [.init(index: 0, encode: false, content: .query)],
+            httpBody: [
+                #"{"contentCheckOk":true,"racyCheckOk":true,"context":{"client":{"clientName":"VISIONOS","clientVersion":"1.02","deviceMake":"Apple","deviceModel":"RealityDevice17,1","osName":"visionOS","osVersion":"26.5.23O471","hl":"en","userAgent":"\#(YouTubeSource.userAgent)"}},"playbackContext":{"contentPlaybackContext":{"html5Preference":"HTML5_PREF_WANTS"}},"videoId":""#,
+                #""}"#
+            ],
+            parameters: [.init(name: "prettyPrint", content: "false")]
+        )
+        return model
+    }()
 
     static func search(_ query: String) async throws -> [YTVideo] {
         let response = try await SearchResponse.sendThrowingRequest(youtubeModel: model, data: [.query: query])
@@ -124,10 +151,12 @@ enum YouTubeSource {
             .filter { $0.mimeType == "audio/mp4" && $0.url != nil && !$0.isDrc }
             .max { ($0.averageBitrate ?? 0) < ($1.averageBitrate ?? 0) }
         guard let format, let url = format.url else {
-            throw SourceError(errorDescription: "No playable audio was found for this video.")
+            let found = Set(infos.downloadFormats.compactMap { $0.mimeType }).sorted().joined(separator: ", ")
+            throw SourceError(errorDescription: "No playable audio was found for this video (formats: \(found.isEmpty ? "none" : found)).")
         }
 
         var request = URLRequest(url: url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         // YouTube throttles audio-only downloads that don't request an explicit range.
         if let length = format.contentLength {
             request.setValue("bytes=0-\(length)", forHTTPHeaderField: "Range")
