@@ -140,6 +140,10 @@ enum YouTubeSource {
 
     static func search(_ query: String) async throws -> [YTVideo] {
         let response = try await SearchResponse.sendThrowingRequest(youtubeModel: model, data: [.query: query])
+        // Downloads without a visitor ID hit YouTube's bot check, reported as "Login is required".
+        if let visitorData = response.visitorData, !visitorData.isEmpty {
+            model.visitorData = visitorData
+        }
         return response.results.compactMap { $0 as? YTVideo }
     }
 
