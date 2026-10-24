@@ -196,32 +196,25 @@ struct LibraryView: View {
                             Label("Add to Playlist", systemImage: "text.badge.plus")
                         }
                     }
+                    // Swipe buttons are text-only: iOS hides the text of icon-and-text buttons on
+                    // shorter rows, so one-line songs would show only icons.
                     .swipeActions(edge: .leading) {
-                        Button {
+                        Button(track.likedAt == nil ? "Like" : "Unlike") {
                             store.toggleLike(track, in: modelContext)
-                        } label: {
-                            Label(track.likedAt == nil ? "Like" : "Unlike",
-                                  systemImage: track.likedAt == nil ? "heart" : "heart.slash")
                         }
                         .tint(.pink)
-                        Button {
+                        Button("Add to Playlist") {
                             tracksToAdd = [track]
-                        } label: {
-                            Label("Add to Playlist", systemImage: "text.badge.plus")
                         }
                         .tint(.indigo)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
+                        Button("Remove", role: .destructive) {
                             tracksToRemove = [track]
-                        } label: {
-                            Label("Remove", systemImage: "trash")
                         }
                         if track.youtubeID != nil && track.isDownloaded {
-                            Button {
+                            Button("Remove Download") {
                                 store.removeDownload(track, in: modelContext)
-                            } label: {
-                                Label("Remove Download", systemImage: "arrow.down.circle.dotted")
                             }
                             .tint(.orange)
                         }

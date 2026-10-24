@@ -22,10 +22,8 @@ struct LikedSongsView: View {
                 }
                 .contextMenu { QueueMenuItems(track: track) }
                 .swipeActions(edge: .trailing) {
-                    Button {
+                    Button("Unlike") {
                         store.toggleLike(track, in: modelContext)
-                    } label: {
-                        Label("Unlike", systemImage: "heart.slash")
                     }
                     .tint(.pink)
                 }
@@ -62,10 +60,8 @@ struct PlaylistsView: View {
                     PlaylistLabel(playlist: playlist)
                 }
                 .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) {
+                    Button("Delete", role: .destructive) {
                         playlistToDelete = playlist
-                    } label: {
-                        Label("Delete", systemImage: "trash")
                     }
                 }
             }
