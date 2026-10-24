@@ -14,10 +14,12 @@ establishes a Windows-to-iPhone build path and local audio playback.
 - Background audio and lock-screen controls, with interruption handling and
   pause when headphones disconnect.
 - Build an unsigned iPhone `.ipa` with GitHub's temporary macOS runner.
+- **Search YouTube** (feasibility test): search YouTube on the phone, tap a
+  result to download its AAC audio stream, and save it into the library like an
+  imported file. This uses [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned
+  to a specific commit. It is unofficial and can break when YouTube changes.
 
-YouTube search and downloading are **not implemented yet**. They require a
-separate on-device feasibility check. This first build has no third-party
-packages, music service credentials, backend, or cloud library sync.
+There are no music service credentials, backend, or cloud library sync.
 
 Requires iOS 17 or newer. The build uses the Xcode version installed by default
 on GitHub's `macos-15` runner and prints that version in its log. The app uses
@@ -107,6 +109,10 @@ After installing:
 9. Confirm an audio file that has not been imported never appears in library search.
    Add it with **Add from Files**, then confirm it is searchable and playable after
    reopening Freeify. Existing imported tracks should still work without reimporting.
+
+10. Tap **Search YouTube**, search for a song, and tap a result. It should download,
+    close the sheet, and appear in the library. Play it in airplane mode and with
+    the screen locked. If it fails, note the full error message.
 
 The milestone passes when the GitHub build creates the `.ipa`, it installs, and
 these checks succeed on the phone. YouTube integration, playlists, deletion,

@@ -8,6 +8,7 @@ struct LibraryView: View {
     @Query(sort: \Track.addedAt, order: .reverse) private var tracks: [Track]
     @StateObject private var player = LocalPlayer()
     @State private var showingImporter = false
+    @State private var showingYouTube = false
     @State private var isImporting = false
     @State private var importError: String?
     @State private var searchText = ""
@@ -69,9 +70,20 @@ struct LibraryView: View {
                 prompt: "Search Freeify library"
             )
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingYouTube = true
+                    } label: {
+                        Label("Search YouTube", systemImage: "globe")
+                    }
+                    .disabled(isImporting)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     importButton
                 }
+            }
+            .sheet(isPresented: $showingYouTube) {
+                YouTubeSearchView(onDownloaded: addTrack)
             }
             .safeAreaInset(edge: .bottom) {
                 if player.trackID != nil {
@@ -168,19 +180,23 @@ struct LibraryView: View {
                 let imported = try await Task.detached(priority: .userInitiated) {
                     try AudioFiles.importFile(source)
                 }.value
-                let track = Track(title: imported.title, filename: imported.filename)
-                let importedURL = track.fileURL
-                modelContext.insert(track)
-                do {
-                    try modelContext.save()
-                } catch {
-                    modelContext.rollback()
-                    try? FileManager.default.removeItem(at: importedURL)
-                    throw error
-                }
+                try addTrack(imported)
             } catch {
                 importError = error.localizedDescription
             }
+        }
+    }
+
+    private func addTrack(_ saved: (title: String, filename: String)) throws {
+        let track = Track(title: saved.title, filename: saved.filename)
+        let savedURL = track.fileURL
+        modelContext.insert(track)
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            try? FileManager.default.removeItem(at: savedURL)
+            throw error
         }
     }
 }

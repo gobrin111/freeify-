@@ -33,22 +33,37 @@ enum AudioFiles {
             if hasAccess { source.stopAccessingSecurityScopedResource() }
         }
 
+        let filename = try store(pathExtension: source.pathExtension) { destination in
+            try FileManager.default.copyItem(at: source, to: destination)
+        }
+        return (source.deletingPathExtension().lastPathComponent, filename)
+    }
+
+    // Move a finished download into Freeify's audio folder.
+    static func saveDownload(_ temporary: URL, title: String) throws -> (title: String, filename: String) {
+        let filename = try store(pathExtension: "m4a") { destination in
+            try FileManager.default.moveItem(at: temporary, to: destination)
+        }
+        return (title, filename)
+    }
+
+    private static func store(pathExtension: String, place: (URL) throws -> Void) throws -> String {
         let manager = FileManager.default
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory
             .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension(source.pathExtension)
+            .appendingPathExtension(pathExtension)
 
         do {
-            try manager.copyItem(at: source, to: destination)
+            try place(destination)
             // Validate before adding a library entry. Unsupported or corrupt files throw.
             _ = try AVAudioPlayer(contentsOf: destination)
-            // Keep imported files readable when the phone locks after its first unlock.
+            // Keep saved files readable when the phone locks after its first unlock.
             try manager.setAttributes(
                 [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
                 ofItemAtPath: destination.path
             )
-            return (source.deletingPathExtension().lastPathComponent, destination.lastPathComponent)
+            return destination.lastPathComponent
         } catch {
             try? manager.removeItem(at: destination)
             throw error

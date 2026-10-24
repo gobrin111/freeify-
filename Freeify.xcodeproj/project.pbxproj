@@ -10,6 +10,8 @@
 		A10000000000000000000002 /* Track.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* Track.swift */; };
 		A10000000000000000000003 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* LibraryView.swift */; };
 		A10000000000000000000004 /* LocalPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* LocalPlayer.swift */; };
+		A10000000000000000000005 /* YouTubeSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* YouTubeSearch.swift */; };
+		A10000000000000000000006 /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000002 /* YouTubeKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,12 +19,13 @@
 		A20000000000000000000002 /* Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Track.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* LocalPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPlayer.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* YouTubeSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeSearch.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000006 /* Freeify.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Freeify.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000006 /* YouTubeKit in Frameworks */); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -38,6 +41,7 @@
 				A20000000000000000000002 /* Track.swift */,
 				A20000000000000000000003 /* LibraryView.swift */,
 				A20000000000000000000004 /* LocalPlayer.swift */,
+				A20000000000000000000007 /* YouTubeSearch.swift */,
 				A20000000000000000000005 /* Info.plist */,
 			);
 			path = Freeify;
@@ -59,6 +63,7 @@
 			buildRules = ();
 			dependencies = ();
 			name = Freeify;
+			packageProductDependencies = (A90000000000000000000002 /* YouTubeKit */);
 			productName = Freeify;
 			productReference = A20000000000000000000006 /* Freeify.app */;
 			productType = "com.apple.product-type.application";
@@ -80,6 +85,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (en, Base);
 			mainGroup = A40000000000000000000001;
+			packageReferences = (A90000000000000000000001 /* XCRemoteSwiftPackageReference "YouTubeKit" */);
 			productRefGroup = A40000000000000000000003 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -95,7 +101,7 @@
 		A30000000000000000000002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004);
+			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
@@ -173,6 +179,25 @@
 		A80000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (A70000000000000000000001, A70000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		A80000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (A70000000000000000000003, A70000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A90000000000000000000001 /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/b5i/YouTubeKit";
+			requirement = {
+				kind = revision;
+				revision = 6532af39da4c1612b0a1af603792419d8fb0e67f;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A90000000000000000000002 /* YouTubeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A90000000000000000000001 /* XCRemoteSwiftPackageReference "YouTubeKit" */;
+			productName = YouTubeKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A60000000000000000000001 /* Project object */;
 }
