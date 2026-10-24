@@ -4,6 +4,8 @@ import YouTubeKit
 
 @MainActor
 struct YouTubeSearchView: View {
+    // Video IDs already in the library, so the same song isn't downloaded twice.
+    let libraryIDs: Set<String>
     let onDownloaded: (SavedAudio) throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -26,7 +28,8 @@ struct YouTubeSearchView: View {
                             Text(name.title)
                                 .foregroundStyle(.primary)
                                 .lineLimit(2)
-                            Text([name.artist, video.timeLength].compactMap { $0 }.joined(separator: " · "))
+                            Text([name.artist, video.timeLength, libraryIDs.contains(video.videoId) ? "In library" : nil]
+                                .compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             if downloadingID == video.videoId {
@@ -37,7 +40,10 @@ struct YouTubeSearchView: View {
                             }
                         }
                         Spacer()
-                        if downloadingID != video.videoId {
+                        if libraryIDs.contains(video.videoId) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        } else if downloadingID != video.videoId {
                             Image(systemName: "arrow.down.circle")
                                 .foregroundStyle(.tint)
                         }
@@ -104,7 +110,7 @@ struct YouTubeSearchView: View {
     }
 
     private func download(_ video: YTVideo) {
-        guard downloadingID == nil, !isSearching else { return }
+        guard downloadingID == nil, !isSearching, !libraryIDs.contains(video.videoId) else { return }
         downloadingID = video.videoId
         progress = nil
         Task { @MainActor in

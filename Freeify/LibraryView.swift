@@ -118,7 +118,7 @@ struct LibraryView: View {
                 }
             }
             .sheet(isPresented: $showingYouTube) {
-                YouTubeSearchView(onDownloaded: addTrack)
+                YouTubeSearchView(libraryIDs: Set(tracks.compactMap { $0.youtubeID }), onDownloaded: addTrack)
             }
             .safeAreaInset(edge: .bottom) {
                 if player.trackID != nil {

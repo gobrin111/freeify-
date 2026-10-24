@@ -61,15 +61,16 @@ Starts only after milestone 2 succeeds.
 
 Build these in order. Each step builds on the ones before it.
 
-### 4.1 Removing songs (in progress: first five items built, not yet checked on the phone)
+### 4.1 Removing songs (in progress)
 
 "Remove download" and "remove from library" are separate actions:
 
-- [ ] Save the YouTube video ID with each new download so it can be downloaded again
-- [ ] **Remove download:** delete the audio file to free space. The song stays in the library, marked "not downloaded", and can be downloaded again with one tap
-- [ ] **Remove from library:** remove the song and its file entirely (swipe to delete)
-- [ ] Songs imported from Files, and downloads made before video IDs were saved, can't be downloaded again. Offer only "Remove from library" for those
-- [ ] Removing the song that is playing stops playback cleanly
+- [x] Save the YouTube video ID with each new download so it can be downloaded again
+- [x] **Remove download:** delete the audio file to free space. The song stays in the library, marked "not downloaded", and can be downloaded again with one tap
+- [x] **Remove from library:** remove the song and its file entirely (swipe to delete)
+- [x] Songs imported from Files, and downloads made before video IDs were saved, can't be downloaded again. Offer only "Remove from library" for those
+- [x] Removing the song that is playing stops playback cleanly
+- [ ] Don't download a song that's already in the library: search shows "In library" (built, not yet checked on the phone)
 - [ ] Multi-select remove (edit mode)
 - [ ] Show storage used by downloads
 
