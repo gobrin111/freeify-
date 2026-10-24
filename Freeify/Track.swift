@@ -1,6 +1,7 @@
 import AVFAudio
 import Foundation
 import SwiftData
+import UIKit
 
 @Model
 final class Track {
@@ -13,6 +14,7 @@ final class Track {
     var youtubeID: String?
     var isDownloaded = true
     var likedAt: Date?
+    var artworkFilename: String?
 
     init(title: String, artist: String?, filename: String, youtubeID: String?) {
         id = UUID()
@@ -25,6 +27,10 @@ final class Track {
 
     var fileURL: URL {
         AudioFiles.directory.appendingPathComponent(filename)
+    }
+
+    var artworkURL: URL? {
+        artworkFilename.map { AudioFiles.directory.appendingPathComponent($0) }
     }
 }
 
@@ -44,7 +50,27 @@ final class Playlist {
     }
 }
 
-typealias SavedAudio = (title: String, artist: String?, filename: String, youtubeID: String?)
+// A saved audio file and what is known about it, before it becomes a Track.
+struct SavedAudio: Sendable {
+    var title: String
+    var artist: String?
+    var filename: String
+    var youtubeID: String?
+    var artworkFilename: String?
+}
+
+// Saved cover art, cached in memory so scrolling lists don't reread files.
+enum Artwork {
+    private static let cache = NSCache<NSString, UIImage>()
+
+    static func image(for track: Track) -> UIImage? {
+        guard let name = track.artworkFilename, let url = track.artworkURL else { return nil }
+        if let cached = cache.object(forKey: name as NSString) { return cached }
+        guard let image = UIImage(contentsOfFile: url.path) else { return nil }
+        cache.setObject(image, forKey: name as NSString)
+        return image
+    }
+}
 
 enum SongName {
     // Split names like "Artist - Song (Official Audio)" into a song title and artist.
@@ -103,7 +129,7 @@ enum AudioFiles {
             try FileManager.default.copyItem(at: source, to: destination)
         }
         let name = SongName.parse(source.deletingPathExtension().lastPathComponent)
-        return (name.title, name.artist, filename, nil)
+        return SavedAudio(title: name.title, artist: name.artist, filename: filename, youtubeID: nil)
     }
 
     // Move a finished download into Freeify's audio folder.
@@ -111,7 +137,13 @@ enum AudioFiles {
         let filename = try store(pathExtension: "m4a") { destination in
             try FileManager.default.moveItem(at: temporary, to: destination)
         }
-        return (title, artist, filename, youtubeID)
+        return SavedAudio(title: title, artist: artist, filename: filename, youtubeID: youtubeID)
+    }
+
+    static func saveArtwork(_ data: Data) throws -> String {
+        let destination = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
+        try data.write(to: destination, options: .completeFileProtectionUntilFirstUserAuthentication)
+        return destination.lastPathComponent
     }
 
     private static func store(pathExtension: String, place: (URL) throws -> Void) throws -> String {

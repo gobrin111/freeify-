@@ -94,14 +94,14 @@ Build these in order. Each step builds on the ones before it.
 
 **Done when:** playlists persist after relaunch and play through the queue.
 
-### 4.4 Queue controls
+### 4.4 Queue controls (built, not yet checked on the phone)
 
 - [ ] "Play next" and "Add to queue" from a swipe or long-press menu
 - [ ] Queue view: see what's coming up, reorder it, and remove songs from it
 
-### 4.5 Details and player
+### 4.5 Details and player (built, not yet checked on the phone)
 
-- [ ] Save the YouTube thumbnail with each download. Show it in lists and on the lock screen (artist is done in milestone 3)
+- [ ] Save cover art with each download (YouTube Music's, or the video thumbnail). Show it in lists, the player, and on the lock screen
 - [ ] Sort the library by recently added, title, or artist
 - [ ] Full-screen player (art, seek bar, shuffle/repeat). Opens by tapping the bottom bar
 

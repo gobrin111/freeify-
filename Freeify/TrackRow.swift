@@ -8,12 +8,18 @@ struct TrackRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: player.trackID == track.id ? "waveform" : "music.note")
-                .foregroundStyle(.tint)
-                .frame(width: 28)
+            ArtworkView(track: track, size: 44)
+                .overlay {
+                    if player.trackID == track.id {
+                        Image(systemName: "waveform")
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 5))
+                    }
+                }
             VStack(alignment: .leading, spacing: 4) {
                 Text(track.title)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(player.trackID == track.id ? Color.mint : .primary)
                     .lineLimit(2)
                 if store.downloadingTrackID == track.id {
                     ProgressView(value: store.downloadProgress ?? 0)
@@ -43,5 +49,30 @@ struct TrackRow: View {
             }
         }
         .padding(.vertical, 6)
+    }
+}
+
+// Saved cover art, or a music note when a song has none.
+struct ArtworkView: View {
+    let track: Track
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let image = Artwork.image(for: track) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "music.note")
+                    .font(.system(size: size * 0.4))
+                    .foregroundStyle(.tint)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.secondary.opacity(0.15))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: max(5, size * 0.04)))
+        .accessibilityHidden(true)
     }
 }

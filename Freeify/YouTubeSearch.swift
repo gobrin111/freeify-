@@ -116,7 +116,7 @@ struct YouTubeSearchView: View {
             defer { downloadingID = nil }
             do {
                 let saved = try await YouTubeSource.download(
-                    videoID: song.id, title: song.title, artist: song.artist
+                    videoID: song.id, title: song.title, artist: song.artist, artworkURL: song.artworkURL
                 ) { value in
                     Task { @MainActor in progress = value }
                 }
@@ -134,6 +134,7 @@ struct SongResult: Identifiable, Sendable {
     let title: String
     let artist: String?
     let duration: String?
+    let artworkURL: URL?
 }
 
 enum YouTubeSource {
@@ -240,11 +241,17 @@ enum YouTubeSource {
                 artists.append(text)
             }
         }
+        // Thumbnails are 120px; the same image is served larger by changing its size suffix.
+        let thumbnails = dig(renderer, "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails") as? [Any]
+        let artworkURL = (dig(thumbnails?.last, "url") as? String).flatMap {
+            URL(string: $0.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression))
+        }
         return SongResult(
             id: videoID,
             title: title,
             artist: artists.isEmpty ? nil : artists.joined(separator: ", "),
-            duration: duration
+            duration: duration,
+            artworkURL: artworkURL
         )
     }
 
@@ -257,9 +264,24 @@ enum YouTubeSource {
         videoID: String,
         title: String? = nil,
         artist: String? = nil,
+        artworkURL: URL? = nil,
         onProgress: @escaping @Sendable (Double) -> Void
     ) async throws -> SavedAudio {
-        try await download(YTVideo(videoId: videoID), title: title, artist: artist, onProgress: onProgress)
+        var saved = try await download(YTVideo(videoId: videoID), title: title, artist: artist, onProgress: onProgress)
+        // Cover art is optional; fall back to the video thumbnail.
+        let fallback = URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
+        if let url = artworkURL ?? fallback {
+            saved.artworkFilename = await fetchArtwork(from: url)
+        }
+        return saved
+    }
+
+    private static func fetchArtwork(from url: URL) async -> String? {
+        guard let result = try? await URLSession.shared.data(from: url),
+              (result.1 as? HTTPURLResponse)?.statusCode == 200,
+              UIImage(data: result.0) != nil
+        else { return nil }
+        return try? AudioFiles.saveArtwork(result.0)
     }
 
     // Use YouTube's AAC (audio/mp4) stream; AVAudioPlayer can't play its WebM/Opus formats.

@@ -17,12 +17,25 @@ struct LibraryView: View {
     @State private var editMode = EditMode.inactive
     @State private var selection = Set<UUID>()
     @State private var storageBytes: Int64 = 0
+    @AppStorage("librarySort") private var sort = LibrarySort.recentlyAdded
 
     private var filteredTracks: [Track] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return tracks }
-        return tracks.filter {
+        let matches = query.isEmpty ? tracks : tracks.filter {
             $0.title.localizedStandardContains(query) || ($0.artist?.localizedStandardContains(query) ?? false)
+        }
+        switch sort {
+        case .recentlyAdded:
+            return matches
+        case .title:
+            return matches.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .artist:
+            return matches.sorted {
+                let order = ($0.artist ?? "").localizedStandardCompare($1.artist ?? "")
+                return order == .orderedSame
+                    ? $0.title.localizedStandardCompare($1.title) == .orderedAscending
+                    : order == .orderedAscending
+            }
         }
     }
 
@@ -161,6 +174,20 @@ struct LibraryView: View {
                         }
                     }
                     .tag(track.id)
+                    .contextMenu {
+                        QueueMenuItems(track: track)
+                        Button {
+                            store.toggleLike(track, in: modelContext)
+                        } label: {
+                            Label(track.likedAt == nil ? "Like" : "Unlike",
+                                  systemImage: track.likedAt == nil ? "heart" : "heart.slash")
+                        }
+                        Button {
+                            tracksToAdd = [track]
+                        } label: {
+                            Label("Add to Playlist", systemImage: "text.badge.plus")
+                        }
+                    }
                     .swipeActions(edge: .leading) {
                         Button {
                             store.toggleLike(track, in: modelContext)
@@ -241,6 +268,11 @@ struct LibraryView: View {
                         Label("Select Songs", systemImage: "checkmark.circle")
                     }
                     .disabled(tracks.isEmpty)
+                    Picker("Sort By", selection: $sort) {
+                        Text("Recently Added").tag(LibrarySort.recentlyAdded)
+                        Text("Title").tag(LibrarySort.title)
+                        Text("Artist").tag(LibrarySort.artist)
+                    }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -271,6 +303,10 @@ struct LibraryView: View {
             }
         }
     }
+}
+
+enum LibrarySort: String {
+    case recentlyAdded, title, artist
 }
 
 // Playback errors, shown wherever the player is used.

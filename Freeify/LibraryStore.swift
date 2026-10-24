@@ -11,13 +11,14 @@ final class LibraryStore: ObservableObject {
 
     func add(_ saved: SavedAudio, in context: ModelContext) throws {
         let track = Track(title: saved.title, artist: saved.artist, filename: saved.filename, youtubeID: saved.youtubeID)
-        let savedURL = track.fileURL
+        track.artworkFilename = saved.artworkFilename
+        let savedURLs = [track.fileURL, track.artworkURL].compactMap { $0 }
         context.insert(track)
         do {
             try context.save()
         } catch {
             context.rollback()
-            try? FileManager.default.removeItem(at: savedURL)
+            savedURLs.forEach { try? FileManager.default.removeItem(at: $0) }
             throw error
         }
     }
@@ -46,7 +47,7 @@ final class LibraryStore: ObservableObject {
     }
 
     func remove(_ tracks: [Track], in context: ModelContext) {
-        let fileURLs = tracks.map { $0.fileURL }
+        let fileURLs = tracks.flatMap { [$0.fileURL, $0.artworkURL].compactMap { $0 } }
         let ids = Set(tracks.map { $0.id })
         for playlist in (try? context.fetch(FetchDescriptor<Playlist>())) ?? [] {
             playlist.trackIDs.removeAll { ids.contains($0) }
@@ -107,6 +108,12 @@ final class LibraryStore: ObservableObject {
                 }
                 track.filename = saved.filename
                 track.isDownloaded = true
+                // Keep the existing cover art; use the new copy only if there was none.
+                if track.artworkFilename == nil {
+                    track.artworkFilename = saved.artworkFilename
+                } else if let extra = saved.artworkFilename {
+                    try? FileManager.default.removeItem(at: AudioFiles.directory.appendingPathComponent(extra))
+                }
                 do {
                     try context.save()
                 } catch {
