@@ -65,6 +65,16 @@ enum AudioFiles {
         URL.applicationSupportDirectory.appendingPathComponent("Audio", isDirectory: true)
     }
 
+    // Space used by Freeify's saved audio.
+    static func usedBytes() -> Int64 {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.fileSizeKey]
+        )) ?? []
+        return files.reduce(0) { total, file in
+            total + Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+    }
+
     // Return values, rather than a SwiftData model, across the background task boundary.
     static func importFile(_ source: URL) throws -> SavedAudio {
         let hasAccess = source.startAccessingSecurityScopedResource()

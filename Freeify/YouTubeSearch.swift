@@ -190,7 +190,7 @@ enum YouTubeSource {
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(status), let json = try? JSONSerialization.jsonObject(with: data) else {
-            throw SourceError(errorDescription: "YouTube Music search failed (HTTP \(status)).")
+            throw SourceError(errorDescription: "YouTube Music search didn’t work (HTTP \(status)). Try again in a moment.")
         }
         // Downloads without a visitor ID hit YouTube's bot check, reported as "Login is required".
         // Keep the first one so searches stay consistent.
@@ -276,7 +276,7 @@ enum YouTubeSource {
             .max { ($0.averageBitrate ?? 0) < ($1.averageBitrate ?? 0) }
         guard let format, let url = format.url else {
             let found = Set(infos.downloadFormats.compactMap { $0.mimeType }).sorted().joined(separator: ", ")
-            throw SourceError(errorDescription: "No playable audio was found for this video (formats: \(found.isEmpty ? "none" : found)).")
+            throw SourceError(errorDescription: "YouTube has no audio Freeify can play for this song. Try another version of it.\n\nDetails: formats \(found.isEmpty ? "none" : found)")
         }
 
         var request = URLRequest(url: url)
@@ -292,7 +292,9 @@ enum YouTubeSource {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(status) else {
             try? FileManager.default.removeItem(at: temporary)
-            throw SourceError(errorDescription: "YouTube refused the download (HTTP \(status)).")
+            throw SourceError(errorDescription: status == 403
+                ? "YouTube refused the download (HTTP 403). YouTube may have changed how downloads work, so Freeify may need an update."
+                : "The download failed (HTTP \(status)). Try again.")
         }
 
         let name = title.map { (title: $0, artist: artist) } ?? SongName.parse(
@@ -334,9 +336,27 @@ enum YouTubeSource {
         }
     }
 
-    // YouTubeKit errors aren't localized; show their details so failures can be diagnosed.
+    // Plain messages for search and download failures. YouTubeKit errors aren't localized,
+    // so their details follow in small print for diagnosing YouTube changes.
     static func describe(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        if let error = error as? SourceError {
+            return error.errorDescription ?? "Something went wrong."
+        }
+        if let error = error as? URLError,
+           [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost,
+            .cannotConnectToHost, .dataNotAllowed].contains(error.code) {
+            return "Freeify couldn’t reach YouTube. Check your internet connection and try again."
+        }
+        let details = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+        let message: String
+        if details.contains("Login is required") {
+            message = "YouTube wants a sign-in for this song. It may be age-restricted, or YouTube’s bot check kicked in. Try another version of the song, or try again later."
+        } else if details.localizedCaseInsensitiveContains("unavailable") {
+            message = "This song isn’t available on YouTube right now. Try another version of it."
+        } else {
+            message = "YouTube wouldn’t let Freeify get this song. Try again, or try another version of it."
+        }
+        return "\(message)\n\nDetails: \(details)"
     }
 
     struct SourceError: LocalizedError {

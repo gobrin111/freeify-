@@ -12,6 +12,9 @@
 		A10000000000000000000004 /* LocalPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* LocalPlayer.swift */; };
 		A10000000000000000000005 /* YouTubeSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* YouTubeSearch.swift */; };
 		A10000000000000000000006 /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = A90000000000000000000002 /* YouTubeKit */; };
+		A10000000000000000000008 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* LibraryStore.swift */; };
+		A10000000000000000000009 /* TrackRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* TrackRow.swift */; };
+		A1000000000000000000000A /* PlayerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* PlayerViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,6 +25,9 @@
 		A20000000000000000000007 /* YouTubeSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeSearch.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000006 /* Freeify.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Freeify.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000008 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* TrackRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackRow.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* PlayerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -42,6 +48,9 @@
 				A20000000000000000000003 /* LibraryView.swift */,
 				A20000000000000000000004 /* LocalPlayer.swift */,
 				A20000000000000000000007 /* YouTubeSearch.swift */,
+				A20000000000000000000008 /* LibraryStore.swift */,
+				A20000000000000000000009 /* TrackRow.swift */,
+				A2000000000000000000000A /* PlayerViews.swift */,
 				A20000000000000000000005 /* Info.plist */,
 			);
 			path = Freeify;
@@ -101,7 +110,7 @@
 		A30000000000000000000002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005);
+			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

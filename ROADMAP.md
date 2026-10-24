@@ -48,11 +48,10 @@ can't be done, choose another source before starting milestone 3.
 Starts only after milestone 2 succeeds.
 
 - [x] Search screen showing source results
-- [ ] Song-focused results: search YouTube Music's Songs tab (real title, artist, and length, the way ytmusicapi does it). Downloads still use YouTube via YouTubeKit (built, not yet checked on the phone)
-- [ ] Result details: song title and artist split from YouTube titles ("Artist - Song (Official Audio)"), artist saved with downloads and shown in the library, player bar, and lock screen (built, not yet checked on the phone)
+- [x] Song-focused results: search YouTube Music's Songs tab (real title, artist, and length, the way ytmusicapi does it). Downloads still use YouTube via YouTubeKit
+- [x] Result details: title, artist, and length from YouTube Music, saved with downloads and shown in the library, player bar, and lock screen. Imports and re-downloads split "Artist - Song" names
 - [x] Download progress bar
-- [ ] Same search returns consistent results: one visitor ID kept and sent with every search (built, not yet checked on the phone)
-- [ ] Clear error messages (YouTubeKit errors currently show raw details)
+- [ ] Clear error messages: plain explanations, with YouTubeKit's details in small print (built, not yet checked on the phone)
 - [x] Downloaded tracks appear in the existing library and play offline
 
 **Done when:** a song can be found, downloaded, and played offline entirely in Freeify.
@@ -71,8 +70,8 @@ Build these in order. Each step builds on the ones before it.
 - [x] Songs imported from Files, and downloads made before video IDs were saved, can't be downloaded again. Offer only "Remove from library" for those
 - [x] Removing the song that is playing stops playback cleanly
 - [ ] Don't download a song that's already in the library: search shows "In library" (built, not yet checked on the phone)
-- [ ] Multi-select remove (edit mode)
-- [ ] Show storage used by downloads
+- [ ] Multi-select remove: More (…) → Select Songs (built, not yet checked on the phone)
+- [ ] Show storage used by downloads, under the song list (built, not yet checked on the phone)
 
 **Done when:** both actions work on the phone. A removed download frees its space, and the song downloads again from the library.
 
