@@ -51,6 +51,7 @@ Starts only after milestone 2 succeeds.
 - [x] Song-focused results: search YouTube Music's Songs tab (real title, artist, and length, the way ytmusicapi does it). Downloads still use YouTube via YouTubeKit
 - [x] Result details: title, artist, and length from YouTube Music, saved with downloads and shown in the library, player bar, and lock screen. Imports and re-downloads split "Artist - Song" names
 - [x] Download progress bar
+- [ ] Preview a search result before downloading: play/stop button next to download, streamed without saving (built, not yet checked on the phone)
 - [ ] Clear error messages: plain explanations, with YouTubeKit's details in small print (built, not yet checked on the phone)
 - [x] Downloaded tracks appear in the existing library and play offline
 

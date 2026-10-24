@@ -8,7 +8,7 @@ Progress and next steps are tracked in [ROADMAP.md](ROADMAP.md).
 
 - **Search YouTube Music** (globe button): searches the Songs tab and downloads a
   song's audio with [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned to a
-  specific commit, plus its cover art. This is unofficial and can break when
+  specific commit, plus its cover art. The play button streams a preview without saving it. This is unofficial and can break when
   YouTube changes; `ROADMAP.md` notes what to check first.
 - **Add from Files**: copy an audio file into Freeify. Freeify never scans the
   phone's files; audio lives in its private Application Support/Audio folder.

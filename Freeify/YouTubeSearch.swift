@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import SwiftUI
 import YouTubeKit
@@ -8,6 +9,8 @@ struct YouTubeSearchView: View {
     let libraryIDs: Set<String>
     let onDownloaded: (SavedAudio) throws -> Void
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var player: LocalPlayer
+    @StateObject private var preview = PreviewPlayer()
     @State private var query = ""
     @State private var results: [SongResult] = []
     @State private var isSearching = false
@@ -19,36 +22,53 @@ struct YouTubeSearchView: View {
     var body: some View {
         NavigationStack {
             List(results) { song in
-                Button {
-                    download(song)
-                } label: {
-                    HStack(spacing: 14) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(song.title)
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                            Text([song.artist, song.duration, libraryIDs.contains(song.id) ? "In library" : nil]
-                                .compactMap { $0 }.joined(separator: " · "))
-                                .font(.caption)
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(song.title)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                        Text([song.artist, song.duration, libraryIDs.contains(song.id) ? "In library" : nil]
+                            .compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if downloadingID == song.id {
+                            ProgressView(value: progress ?? 0)
+                            Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
+                                .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
-                            if downloadingID == song.id {
-                                ProgressView(value: progress ?? 0)
-                                Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        if libraryIDs.contains(song.id) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        } else if downloadingID != song.id {
-                            Image(systemName: "arrow.down.circle")
-                                .foregroundStyle(.tint)
                         }
                     }
-                    .padding(.vertical, 6)
+                    Spacer()
+                    Button {
+                        togglePreview(song)
+                    } label: {
+                        if preview.songID == song.id && preview.isLoading {
+                            ProgressView()
+                        } else {
+                            Image(systemName: preview.songID == song.id ? "stop.circle" : "play.circle")
+                                .font(.title2)
+                        }
+                    }
+                    .frame(width: 32)
+                    .accessibilityLabel(preview.songID == song.id ? "Stop preview" : "Preview")
+                    if libraryIDs.contains(song.id) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 32)
+                            .accessibilityLabel("In library")
+                    } else if downloadingID != song.id {
+                        Button {
+                            download(song)
+                        } label: {
+                            Image(systemName: "arrow.down.circle").font(.title2)
+                        }
+                        .frame(width: 32)
+                        .accessibilityLabel("Download")
+                    }
                 }
+                .buttonStyle(.borderless)
+                .padding(.vertical, 6)
             }
             .overlay {
                 if isSearching {
@@ -63,7 +83,7 @@ struct YouTubeSearchView: View {
                     ContentUnavailableView {
                         Label("Search YouTube Music", systemImage: "magnifyingglass")
                     } description: {
-                        Text("Find a song, then tap it to save an offline copy in Freeify.")
+                        Text("Find a song, then tap play to preview it or the download button to save it in Freeify.")
                     }
                 }
             }
@@ -81,6 +101,14 @@ struct YouTubeSearchView: View {
                         .disabled(downloadingID != nil)
                 }
             }
+            .alert("Couldn’t preview song", isPresented: Binding(
+                get: { preview.errorMessage != nil },
+                set: { if !$0 { preview.errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { preview.errorMessage = nil }
+            } message: {
+                Text(preview.errorMessage ?? "")
+            }
             .alert("Something went wrong", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -91,6 +119,15 @@ struct YouTubeSearchView: View {
             }
         }
         .interactiveDismissDisabled(downloadingID != nil)
+        .onDisappear { preview.stop() }
+    }
+
+    // Pause library playback so the preview isn't mixed with it.
+    private func togglePreview(_ song: SongResult) {
+        if preview.songID != song.id && player.isPlaying {
+            player.pause()
+        }
+        preview.toggle(song)
     }
 
     private func search() {
@@ -123,6 +160,78 @@ struct YouTubeSearchView: View {
                 try onDownloaded(saved)
                 dismiss()
             } catch {
+                errorMessage = YouTubeSource.describe(error)
+            }
+        }
+    }
+}
+
+// Streams a search result without saving it.
+@MainActor
+final class PreviewPlayer: ObservableObject {
+    @Published private(set) var songID: String?
+    @Published private(set) var isLoading = false
+    @Published var errorMessage: String?
+
+    private var player: AVPlayer?
+    private var statusObservation: NSKeyValueObservation?
+    private var endObserver: NSObjectProtocol?
+
+    func toggle(_ song: SongResult) {
+        if songID == song.id {
+            stop()
+        } else {
+            start(song)
+        }
+    }
+
+    func stop() {
+        player?.pause()
+        player = nil
+        statusObservation = nil
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = nil
+        songID = nil
+        isLoading = false
+    }
+
+    private func start(_ song: SongResult) {
+        stop()
+        songID = song.id
+        isLoading = true
+        Task { @MainActor in
+            do {
+                let asset = try await YouTubeSource.previewAsset(videoID: song.id)
+                // Stopped, or another song picked, while the link loaded.
+                guard songID == song.id else { return }
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .default)
+                try session.setActive(true)
+                let item = AVPlayerItem(asset: asset)
+                statusObservation = item.observe(\.status) { [weak self] item, _ in
+                    let status = item.status
+                    let details = item.error?.localizedDescription ?? "unknown"
+                    Task { @MainActor [weak self] in
+                        guard let self, self.songID == song.id else { return }
+                        if status == .readyToPlay {
+                            self.isLoading = false
+                        } else if status == .failed {
+                            self.stop()
+                            self.errorMessage = "This preview couldn’t play. You can still download the song.\n\nDetails: \(details)"
+                        }
+                    }
+                }
+                endObserver = NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.stop() }
+                }
+                let player = AVPlayer(playerItem: item)
+                self.player = player
+                player.play()
+            } catch {
+                guard songID == song.id else { return }
+                stop()
                 errorMessage = YouTubeSource.describe(error)
             }
         }
@@ -284,13 +393,10 @@ enum YouTubeSource {
         return try? AudioFiles.saveArtwork(result.0)
     }
 
-    // Use YouTube's AAC (audio/mp4) stream; AVAudioPlayer can't play its WebM/Opus formats.
-    private static func download(
-        _ video: YTVideo,
-        title: String?,
-        artist: String?,
-        onProgress: @escaping @Sendable (Double) -> Void
-    ) async throws -> SavedAudio {
+    // YouTube's best AAC (audio/mp4) stream; AVAudioPlayer can't play its WebM/Opus formats.
+    private static func audioStream(
+        for video: YTVideo
+    ) async throws -> (infos: VideoInfosWithDownloadFormatsResponse, format: AudioOnlyFormat, url: URL) {
         let infos = try await video.fetchStreamingInfosWithDownloadFormatsThrowing(youtubeModel: model)
         let format = infos.downloadFormats
             .compactMap { $0 as? AudioOnlyFormat }
@@ -300,7 +406,22 @@ enum YouTubeSource {
             let found = Set(infos.downloadFormats.compactMap { $0.mimeType }).sorted().joined(separator: ", ")
             throw SourceError(errorDescription: "YouTube has no audio Freeify can play for this song. Try another version of it.\n\nDetails: formats \(found.isEmpty ? "none" : found)")
         }
+        return (infos, format, url)
+    }
 
+    // A streamable asset for previews, sent with the same User-Agent as downloads.
+    static func previewAsset(videoID: String) async throws -> AVURLAsset {
+        let url = try await audioStream(for: YTVideo(videoId: videoID)).url
+        return AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": userAgent]])
+    }
+
+    private static func download(
+        _ video: YTVideo,
+        title: String?,
+        artist: String?,
+        onProgress: @escaping @Sendable (Double) -> Void
+    ) async throws -> SavedAudio {
+        let (infos, format, url) = try await audioStream(for: video)
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         // YouTube throttles audio-only downloads that don't request an explicit range.
