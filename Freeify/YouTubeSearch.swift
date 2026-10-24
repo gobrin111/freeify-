@@ -13,6 +13,11 @@ struct YouTubeSearchView: View {
     @StateObject private var preview = PreviewPlayer()
     @State private var query = ""
     @State private var results: [SongResult] = []
+    @State private var continuation: String?
+    @State private var isLoadingMore = false
+    @State private var loadMoreFailed = false
+    // Bumped on each new search so a late page from an older search is ignored.
+    @State private var searchGeneration = 0
     @State private var isSearching = false
     @State private var hasSearched = false
     @State private var downloadingID: String?
@@ -21,54 +26,79 @@ struct YouTubeSearchView: View {
 
     var body: some View {
         NavigationStack {
-            List(results) { song in
-                HStack(spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(song.title)
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                        Text([song.artist, song.duration, libraryIDs.contains(song.id) ? "In library" : nil]
-                            .compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if downloadingID == song.id {
-                            ProgressView(value: progress ?? 0)
-                            Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
-                                .font(.caption.monospacedDigit())
+            List {
+                ForEach(results) { song in
+                    HStack(spacing: 14) {
+                        // Streamed for display only; nothing here is saved.
+                        AsyncImage(url: song.thumbnailURL) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Image(systemName: "music.note")
+                                .foregroundStyle(.tint)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .background(Color.secondary.opacity(0.15))
+                        }
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(song.title)
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                            Text([song.artist, song.duration, libraryIDs.contains(song.id) ? "In library" : nil]
+                                .compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if downloadingID == song.id {
+                                ProgressView(value: progress ?? 0)
+                                Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                    }
-                    Spacer()
-                    Button {
-                        togglePreview(song)
-                    } label: {
-                        if preview.songID == song.id && preview.isLoading {
-                            ProgressView()
-                        } else {
-                            Image(systemName: preview.songID == song.id ? "stop.circle" : "play.circle")
-                                .font(.title2)
-                        }
-                    }
-                    .frame(width: 32)
-                    .accessibilityLabel(preview.songID == song.id ? "Stop preview" : "Preview")
-                    if libraryIDs.contains(song.id) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 32)
-                            .accessibilityLabel("In library")
-                    } else if downloadingID != song.id {
+                        Spacer()
                         Button {
-                            download(song)
+                            togglePreview(song)
                         } label: {
-                            Image(systemName: "arrow.down.circle").font(.title2)
+                            if preview.songID == song.id && preview.isLoading {
+                                ProgressView()
+                            } else {
+                                Image(systemName: preview.songID == song.id ? "stop.circle" : "play.circle")
+                                    .font(.title2)
+                            }
                         }
                         .frame(width: 32)
-                        .accessibilityLabel("Download")
+                        .accessibilityLabel(preview.songID == song.id ? "Stop preview" : "Preview")
+                        if libraryIDs.contains(song.id) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 32)
+                                .accessibilityLabel("In library")
+                        } else if downloadingID != song.id {
+                            Button {
+                                download(song)
+                            } label: {
+                                Image(systemName: "arrow.down.circle").font(.title2)
+                            }
+                            .frame(width: 32)
+                            .accessibilityLabel("Download")
+                        }
                     }
+                    .buttonStyle(.borderless)
+                    .padding(.vertical, 6)
                 }
-                .buttonStyle(.borderless)
-                .padding(.vertical, 6)
+                if continuation != nil {
+                    Group {
+                        if loadMoreFailed {
+                            Button("Load More") { loadMore() }
+                        } else {
+                            ProgressView()
+                                .onAppear { loadMore() }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
             .overlay {
                 if isSearching {
@@ -134,13 +164,48 @@ struct YouTubeSearchView: View {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, downloadingID == nil else { return }
         isSearching = true
+        searchGeneration += 1
+        let generation = searchGeneration
+        results = []
+        continuation = nil
+        loadMoreFailed = false
         Task { @MainActor in
             defer { isSearching = false }
             do {
-                results = try await YouTubeSource.searchSongs(text)
+                let page = try await YouTubeSource.searchSongs(text)
+                guard generation == searchGeneration else { return }
+                var seen = Set<String>()
+                results = page.songs.filter { seen.insert($0.id).inserted }
+                continuation = page.continuation
                 hasSearched = true
             } catch {
                 errorMessage = YouTubeSource.describe(error)
+            }
+        }
+    }
+
+    // Fetch the next page when the list reaches its end.
+    private func loadMore() {
+        guard let token = continuation, !isLoadingMore, !isSearching else { return }
+        isLoadingMore = true
+        loadMoreFailed = false
+        let generation = searchGeneration
+        Task { @MainActor in
+            do {
+                let page = try await YouTubeSource.moreSongs(token)
+                isLoadingMore = false
+                guard generation == searchGeneration else { return }
+                // Pages can repeat a song; keep the first copy so list rows stay unique.
+                var seen = Set(results.map { $0.id })
+                let added = page.songs.filter { seen.insert($0.id).inserted }
+                results += added
+                continuation = page.continuation
+                // The loading row only appears once, so fetch on if this page added nothing.
+                if added.isEmpty { loadMore() }
+            } catch {
+                isLoadingMore = false
+                guard generation == searchGeneration else { return }
+                loadMoreFailed = true
             }
         }
     }
@@ -243,7 +308,13 @@ struct SongResult: Identifiable, Sendable {
     let title: String
     let artist: String?
     let duration: String?
-    let artworkURL: URL?
+    let thumbnailURL: URL? // small, for search rows
+    let artworkURL: URL? // large, saved with downloads
+}
+
+struct SongPage: Sendable {
+    let songs: [SongResult]
+    let continuation: String?
 }
 
 enum YouTubeSource {
@@ -278,23 +349,50 @@ enum YouTubeSource {
 
     // Search YouTube Music's Songs tab, the way ytmusicapi does, so results are songs
     // with their real artist instead of every kind of YouTube video.
-    static func searchSongs(_ query: String) async throws -> [SongResult] {
-        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/search?prettyPrint=false")!)
+    static func searchSongs(_ query: String) async throws -> SongPage {
+        let json = try await musicSearch(urlSuffix: "", extraBody: [
+            "query": query,
+            "params": "EgWKAQIIAWoMEA4QChADEAQQCRAF" // Songs filter
+        ])
+        let tabs = dig(json, "contents", "tabbedSearchResultsRenderer", "tabs") as? [Any]
+        let sections = dig(tabs?.first, "tabRenderer", "content", "sectionListRenderer", "contents") as? [Any] ?? []
+        let shelves = sections.compactMap { dig($0, "musicShelfRenderer") }
+        return SongPage(
+            songs: shelves.flatMap { dig($0, "contents") as? [Any] ?? [] }.compactMap(parseSong),
+            continuation: shelves.lazy.compactMap(continuationToken).first
+        )
+    }
+
+    // The next page of a search, for infinite scrolling.
+    static func moreSongs(_ continuation: String) async throws -> SongPage {
+        let token = continuation.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? continuation
+        let json = try await musicSearch(urlSuffix: "&ctoken=\(token)&continuation=\(token)", extraBody: [:])
+        let shelf = dig(json, "continuationContents", "musicShelfContinuation")
+        return SongPage(
+            songs: (dig(shelf, "contents") as? [Any] ?? []).compactMap(parseSong),
+            continuation: shelf.flatMap(continuationToken)
+        )
+    }
+
+    private static func continuationToken(_ shelf: Any) -> String? {
+        let continuations = dig(shelf, "continuations") as? [Any]
+        return dig(continuations?.first, "nextContinuationData", "continuation") as? String
+    }
+
+    private static func musicSearch(urlSuffix: String, extraBody: [String: Any]) async throws -> Any {
+        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/search?prettyPrint=false\(urlSuffix)")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
         if !model.visitorData.isEmpty {
             request.setValue(model.visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
         }
-        let body: [String: Any] = [
-            "context": ["client": [
-                "clientName": "WEB_REMIX",
-                "clientVersion": musicClientVersion(),
-                "hl": model.selectedLocaleLanguageCode
-            ]],
-            "query": query,
-            "params": "EgWKAQIIAWoMEA4QChADEAQQCRAF" // Songs filter
-        ]
+        var body = extraBody
+        body["context"] = ["client": [
+            "clientName": "WEB_REMIX",
+            "clientVersion": musicClientVersion(),
+            "hl": model.selectedLocaleLanguageCode
+        ]]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -307,11 +405,7 @@ enum YouTubeSource {
         if model.visitorData.isEmpty, let visitorData = dig(json, "responseContext", "visitorData") as? String {
             model.visitorData = visitorData
         }
-        let tabs = dig(json, "contents", "tabbedSearchResultsRenderer", "tabs") as? [Any]
-        let sections = dig(tabs?.first, "tabRenderer", "content", "sectionListRenderer", "contents") as? [Any] ?? []
-        return sections
-            .flatMap { dig($0, "musicShelfRenderer", "contents") as? [Any] ?? [] }
-            .compactMap(parseSong)
+        return json
     }
 
     // ytmusicapi uses today's date as the web client version.
@@ -352,7 +446,8 @@ enum YouTubeSource {
         }
         // Thumbnails are 120px; the same image is served larger by changing its size suffix.
         let thumbnails = dig(renderer, "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails") as? [Any]
-        let artworkURL = (dig(thumbnails?.last, "url") as? String).flatMap {
+        let thumbnail = dig(thumbnails?.last, "url") as? String
+        let artworkURL = thumbnail.flatMap {
             URL(string: $0.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression))
         }
         return SongResult(
@@ -360,6 +455,7 @@ enum YouTubeSource {
             title: title,
             artist: artists.isEmpty ? nil : artists.joined(separator: ", "),
             duration: duration,
+            thumbnailURL: thumbnail.flatMap { URL(string: $0) },
             artworkURL: artworkURL
         )
     }

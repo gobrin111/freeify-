@@ -6,7 +6,7 @@ Progress and next steps are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Features
 
-- **Search YouTube Music** (globe button): searches the Songs tab and downloads a
+- **Search YouTube Music** (globe button): searches the Songs tab, with cover art and more results as you scroll, and downloads a
   song's audio with [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned to a
   specific commit, plus its cover art. The play button streams a preview without saving it. This is unofficial and can break when
   YouTube changes; `ROADMAP.md` notes what to check first.

@@ -52,6 +52,7 @@ Starts only after milestone 2 succeeds.
 - [x] Result details: title, artist, and length from YouTube Music, saved with downloads and shown in the library, player bar, and lock screen. Imports and re-downloads split "Artist - Song" names
 - [x] Download progress bar
 - [ ] Preview a search result before downloading: play/stop button next to download, streamed without saving (built, not yet checked on the phone)
+- [ ] Cover art in search results, shown without saving, and infinite scroll that loads 20 more songs at the end of the list (built, not yet checked on the phone)
 - [ ] Clear error messages: plain explanations, with YouTubeKit's details in small print (built, not yet checked on the phone)
 - [x] Downloaded tracks appear in the existing library and play offline
 
