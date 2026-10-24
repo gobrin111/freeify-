@@ -9,6 +9,7 @@ struct YouTubeSearchView: View {
     @State private var query = ""
     @State private var results: [YTVideo] = []
     @State private var isSearching = false
+    @State private var hasSearched = false
     @State private var downloadingID: String?
     @State private var errorMessage: String?
 
@@ -41,6 +42,12 @@ struct YouTubeSearchView: View {
             .overlay {
                 if isSearching {
                     ProgressView("Searching…")
+                } else if results.isEmpty && hasSearched {
+                    ContentUnavailableView {
+                        Label("No songs found", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Shorts, live streams, and videos over 15 minutes are hidden. Try another search.")
+                    }
                 } else if results.isEmpty {
                     ContentUnavailableView {
                         Label("Search YouTube", systemImage: "magnifyingglass")
@@ -83,6 +90,7 @@ struct YouTubeSearchView: View {
             defer { isSearching = false }
             do {
                 results = try await YouTubeSource.search(text)
+                hasSearched = true
             } catch {
                 errorMessage = describe(error)
             }
@@ -144,7 +152,24 @@ enum YouTubeSource {
         if let visitorData = response.visitorData, !visitorData.isEmpty {
             model.visitorData = visitorData
         }
-        return response.results.compactMap { $0 as? YTVideo }
+        let videos = response.results.compactMap { $0 as? YTVideo }.filter(hasSongLength)
+        // Keep YouTube's order within each group, with likely songs first.
+        return videos.filter { looksLikeSong($0, query: query) } + videos.filter { !looksLikeSong($0, query: query) }
+    }
+
+    // Hide Shorts, live streams and premieres (no fixed length), and long videos like podcasts.
+    private static func hasSongLength(_ video: YTVideo) -> Bool {
+        guard let seconds = video.timeLengthSeconds, (60...900).contains(seconds) else { return false }
+        return !(video.title ?? "").localizedCaseInsensitiveContains("#shorts")
+    }
+
+    private static func looksLikeSong(_ video: YTVideo, query: String) -> Bool {
+        let title = video.title ?? ""
+        let channel = video.channel?.name ?? ""
+        return title.localizedCaseInsensitiveContains("audio")
+            || title.localizedCaseInsensitiveContains("lyric")
+            || channel.hasSuffix(" - Topic")
+            || (!channel.isEmpty && query.localizedCaseInsensitiveContains(channel))
     }
 
     // Use YouTube's AAC (audio/mp4) stream; AVAudioPlayer can't play its WebM/Opus formats.
