@@ -109,7 +109,7 @@ struct LibraryView: View {
                     Button {
                         showingYouTube = true
                     } label: {
-                        Label("Search YouTube", systemImage: "globe")
+                        Label("Search YouTube Music", systemImage: "globe")
                     }
                     .disabled(isImporting)
                 }
@@ -161,7 +161,7 @@ struct LibraryView: View {
             } message: { track in
                 Text(track.youtubeID == nil
                     ? "This deletes Freeify’s copy of the audio. To get it back, add it again."
-                    : "This deletes the song and its audio. You can find it again in Search YouTube.")
+                    : "This deletes the song and its audio. You can find it again in Search YouTube Music.")
             }
             .alert("Couldn’t update library", isPresented: Binding(
                 get: { libraryError != nil },

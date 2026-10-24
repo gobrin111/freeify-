@@ -48,7 +48,7 @@ can't be done, choose another source before starting milestone 3.
 Starts only after milestone 2 succeeds.
 
 - [x] Search screen showing source results
-- [ ] Song-focused results: normal YouTube search (YouTube Music misses remixes and fan uploads), hiding Shorts, live streams, and videos outside 1–15 min, with likely songs listed first (built, not yet checked on the phone)
+- [ ] Song-focused results: search YouTube Music's Songs tab (real title, artist, and length, the way ytmusicapi does it). Downloads still use YouTube via YouTubeKit (built, not yet checked on the phone)
 - [ ] Result details: song title and artist split from YouTube titles ("Artist - Song (Official Audio)"), artist saved with downloads and shown in the library, player bar, and lock screen (built, not yet checked on the phone)
 - [x] Download progress bar
 - [ ] Same search returns consistent results: one visitor ID kept and sent with every search (built, not yet checked on the phone)

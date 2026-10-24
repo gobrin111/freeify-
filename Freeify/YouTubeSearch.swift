@@ -9,7 +9,7 @@ struct YouTubeSearchView: View {
     let onDownloaded: (SavedAudio) throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var results: [YTVideo] = []
+    @State private var results: [SongResult] = []
     @State private var isSearching = false
     @State private var hasSearched = false
     @State private var downloadingID: String?
@@ -18,21 +18,20 @@ struct YouTubeSearchView: View {
 
     var body: some View {
         NavigationStack {
-            List(results, id: \.videoId) { video in
+            List(results) { song in
                 Button {
-                    download(video)
+                    download(song)
                 } label: {
                     HStack(spacing: 14) {
                         VStack(alignment: .leading, spacing: 4) {
-                            let name = SongName.parse(video.title ?? "Untitled", channel: video.channel?.name)
-                            Text(name.title)
+                            Text(song.title)
                                 .foregroundStyle(.primary)
                                 .lineLimit(2)
-                            Text([name.artist, video.timeLength, libraryIDs.contains(video.videoId) ? "In library" : nil]
+                            Text([song.artist, song.duration, libraryIDs.contains(song.id) ? "In library" : nil]
                                 .compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            if downloadingID == video.videoId {
+                            if downloadingID == song.id {
                                 ProgressView(value: progress ?? 0)
                                 Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
                                     .font(.caption.monospacedDigit())
@@ -40,10 +39,10 @@ struct YouTubeSearchView: View {
                             }
                         }
                         Spacer()
-                        if libraryIDs.contains(video.videoId) {
+                        if libraryIDs.contains(song.id) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.secondary)
-                        } else if downloadingID != video.videoId {
+                        } else if downloadingID != song.id {
                             Image(systemName: "arrow.down.circle")
                                 .foregroundStyle(.tint)
                         }
@@ -58,17 +57,17 @@ struct YouTubeSearchView: View {
                     ContentUnavailableView {
                         Label("No songs found", systemImage: "magnifyingglass")
                     } description: {
-                        Text("Shorts, live streams, and videos over 15 minutes are hidden. Try another search.")
+                        Text("YouTube Music has no songs matching that search. Try another title or artist.")
                     }
                 } else if results.isEmpty {
                     ContentUnavailableView {
-                        Label("Search YouTube", systemImage: "magnifyingglass")
+                        Label("Search YouTube Music", systemImage: "magnifyingglass")
                     } description: {
                         Text("Find a song, then tap it to save an offline copy in Freeify.")
                     }
                 }
             }
-            .navigationTitle("Search YouTube")
+            .navigationTitle("YouTube Music")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(
                 text: $query,
@@ -101,7 +100,7 @@ struct YouTubeSearchView: View {
         Task { @MainActor in
             defer { isSearching = false }
             do {
-                results = try await YouTubeSource.search(text)
+                results = try await YouTubeSource.searchSongs(text)
                 hasSearched = true
             } catch {
                 errorMessage = YouTubeSource.describe(error)
@@ -109,14 +108,16 @@ struct YouTubeSearchView: View {
         }
     }
 
-    private func download(_ video: YTVideo) {
-        guard downloadingID == nil, !isSearching, !libraryIDs.contains(video.videoId) else { return }
-        downloadingID = video.videoId
+    private func download(_ song: SongResult) {
+        guard downloadingID == nil, !isSearching, !libraryIDs.contains(song.id) else { return }
+        downloadingID = song.id
         progress = nil
         Task { @MainActor in
             defer { downloadingID = nil }
             do {
-                let saved = try await YouTubeSource.download(video) { value in
+                let saved = try await YouTubeSource.download(
+                    videoID: song.id, title: song.title, artist: song.artist
+                ) { value in
                     Task { @MainActor in progress = value }
                 }
                 try onDownloaded(saved)
@@ -126,6 +127,13 @@ struct YouTubeSearchView: View {
             }
         }
     }
+}
+
+struct SongResult: Identifiable, Sendable {
+    let id: String // YouTube video ID
+    let title: String
+    let artist: String?
+    let duration: String?
 }
 
 enum YouTubeSource {
@@ -155,66 +163,110 @@ enum YouTubeSource {
             ],
             parameters: [.init(name: "prettyPrint", content: "false")]
         )
-        // YouTubeKit's search sends no visitor ID, so YouTube treats each search as a new
-        // visitor and the same search returns different results. Send the saved one.
-        model.customHeaders[.search] = HeadersList(
-            url: URL(string: "https://www.youtube.com/youtubei/v1/search")!,
-            method: .POST,
-            headers: [
-                .init(name: "Content-Type", content: "application/json"),
-                .init(name: "Origin", content: "https://www.youtube.com"),
-                .init(name: "X-Youtube-Client-Name", content: "1"),
-                .init(name: "X-Youtube-Client-Version", content: "2.20260213.01.00")
-            ],
-            customHeaders: ["X-Goog-Visitor-Id": .visitorData],
-            addQueryAfterParts: [.init(index: 0, encode: false, content: .query)],
-            httpBody: [
-                #"{"context":{"client":{"clientName":"WEB","clientVersion":"2.20260213.01.00","hl":"\#(model.selectedLocaleLanguageCode)"}},"query":""#,
-                #""}"#
-            ],
-            parameters: [.init(name: "prettyPrint", content: "false")]
-        )
         return model
     }()
 
-    static func search(_ query: String) async throws -> [YTVideo] {
-        let response = try await SearchResponse.sendThrowingRequest(youtubeModel: model, data: [.query: query])
+    // Search YouTube Music's Songs tab, the way ytmusicapi does, so results are songs
+    // with their real artist instead of every kind of YouTube video.
+    static func searchSongs(_ query: String) async throws -> [SongResult] {
+        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/search?prettyPrint=false")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        if !model.visitorData.isEmpty {
+            request.setValue(model.visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
+        }
+        let body: [String: Any] = [
+            "context": ["client": [
+                "clientName": "WEB_REMIX",
+                "clientVersion": musicClientVersion(),
+                "hl": model.selectedLocaleLanguageCode
+            ]],
+            "query": query,
+            "params": "EgWKAQIIAWoMEA4QChADEAQQCRAF" // Songs filter
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200...299).contains(status), let json = try? JSONSerialization.jsonObject(with: data) else {
+            throw SourceError(errorDescription: "YouTube Music search failed (HTTP \(status)).")
+        }
         // Downloads without a visitor ID hit YouTube's bot check, reported as "Login is required".
         // Keep the first one so searches stay consistent.
-        if model.visitorData.isEmpty, let visitorData = response.visitorData, !visitorData.isEmpty {
+        if model.visitorData.isEmpty, let visitorData = dig(json, "responseContext", "visitorData") as? String {
             model.visitorData = visitorData
         }
-        let videos = response.results.compactMap { $0 as? YTVideo }.filter(hasSongLength)
-        // Keep YouTube's order within each group, with likely songs first.
-        return videos.filter { looksLikeSong($0, query: query) } + videos.filter { !looksLikeSong($0, query: query) }
+        let tabs = dig(json, "contents", "tabbedSearchResultsRenderer", "tabs") as? [Any]
+        let sections = dig(tabs?.first, "tabRenderer", "content", "sectionListRenderer", "contents") as? [Any] ?? []
+        return sections
+            .flatMap { dig($0, "musicShelfRenderer", "contents") as? [Any] ?? [] }
+            .compactMap(parseSong)
     }
 
-    // Hide Shorts, live streams and premieres (no fixed length), and long videos like podcasts.
-    private static func hasSongLength(_ video: YTVideo) -> Bool {
-        guard let seconds = video.timeLengthSeconds, (60...900).contains(seconds) else { return false }
-        return !(video.title ?? "").localizedCaseInsensitiveContains("#shorts")
+    // ytmusicapi uses today's date as the web client version.
+    private static func musicClientVersion() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd"
+        return "1.\(formatter.string(from: Date())).01.00"
     }
 
-    private static func looksLikeSong(_ video: YTVideo, query: String) -> Bool {
-        let title = video.title ?? ""
-        let channel = video.channel?.name ?? ""
-        return title.localizedCaseInsensitiveContains("audio")
-            || title.localizedCaseInsensitiveContains("lyric")
-            || channel.hasSuffix(" - Topic")
-            || (!channel.isEmpty && query.localizedCaseInsensitiveContains(channel))
+    // A song row has the title in its first column and "Artist • Album • 3:16" in its second.
+    private static func parseSong(_ item: Any) -> SongResult? {
+        guard let renderer = dig(item, "musicResponsiveListItemRenderer"),
+              let columns = dig(renderer, "flexColumns") as? [Any], columns.count >= 2
+        else { return nil }
+        let titleRuns = dig(columns[0], "musicResponsiveListItemFlexColumnRenderer", "text", "runs") as? [Any] ?? []
+        let detailRuns = dig(columns[1], "musicResponsiveListItemFlexColumnRenderer", "text", "runs") as? [Any] ?? []
+        guard let title = dig(titleRuns.first, "text") as? String,
+              let videoID = (dig(renderer, "playlistItemData", "videoId")
+                  ?? dig(titleRuns.first, "navigationEndpoint", "watchEndpoint", "videoId")) as? String
+        else { return nil }
+
+        var artists: [String] = []
+        var duration: String?
+        var pastArtists = false
+        // Odd runs are separators such as " • " or " & ".
+        for (index, run) in detailRuns.enumerated() where index % 2 == 0 {
+            guard let text = dig(run, "text") as? String else { continue }
+            let browseID = dig(run, "navigationEndpoint", "browseEndpoint", "browseId") as? String
+            if text.range(of: #"^(\d+:)*\d+:\d+$"#, options: .regularExpression) != nil {
+                duration = text
+            } else if browseID?.hasPrefix("MPRE") == true {
+                pastArtists = true // album
+            } else if !pastArtists {
+                artists.append(text)
+            }
+        }
+        return SongResult(
+            id: videoID,
+            title: title,
+            artist: artists.isEmpty ? nil : artists.joined(separator: ", "),
+            duration: duration
+        )
     }
 
-    // Download a song again from its saved video ID.
+    private static func dig(_ value: Any?, _ keys: String...) -> Any? {
+        keys.reduce(value) { ($0 as? [String: Any])?[$1] }
+    }
+
+    // Download a song by video ID. Without a known title (a re-download), use YouTube's video title.
     static func download(
         videoID: String,
+        title: String? = nil,
+        artist: String? = nil,
         onProgress: @escaping @Sendable (Double) -> Void
     ) async throws -> SavedAudio {
-        try await download(YTVideo(videoId: videoID), onProgress: onProgress)
+        try await download(YTVideo(videoId: videoID), title: title, artist: artist, onProgress: onProgress)
     }
 
     // Use YouTube's AAC (audio/mp4) stream; AVAudioPlayer can't play its WebM/Opus formats.
-    static func download(
+    private static func download(
         _ video: YTVideo,
+        title: String?,
+        artist: String?,
         onProgress: @escaping @Sendable (Double) -> Void
     ) async throws -> SavedAudio {
         let infos = try await video.fetchStreamingInfosWithDownloadFormatsThrowing(youtubeModel: model)
@@ -243,9 +295,9 @@ enum YouTubeSource {
             throw SourceError(errorDescription: "YouTube refused the download (HTTP \(status)).")
         }
 
-        let name = SongName.parse(
-            video.title ?? infos.videoInfos.title ?? "Untitled",
-            channel: video.channel?.name ?? infos.videoInfos.channel?.name
+        let name = title.map { (title: $0, artist: artist) } ?? SongName.parse(
+            infos.videoInfos.title ?? "Untitled",
+            channel: infos.videoInfos.channel?.name
         )
         do {
             return try await Task.detached(priority: .userInitiated) {
