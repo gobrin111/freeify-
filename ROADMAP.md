@@ -50,7 +50,9 @@ Starts only after milestone 2 succeeds.
 - [x] Search screen showing source results
 - [ ] Song-focused results: normal YouTube search (YouTube Music misses remixes and fan uploads), hiding Shorts, live streams, and videos outside 1–15 min, with likely songs listed first (built, not yet checked on the phone)
 - [ ] Result details (title, artist, duration)
-- [ ] Download progress and clear error messages
+- [ ] Download progress bar (built, not yet checked on the phone)
+- [ ] Same search returns consistent results: one visitor ID kept and sent with every search (built, not yet checked on the phone)
+- [ ] Clear error messages (YouTubeKit errors currently show raw details)
 - [x] Downloaded tracks appear in the existing library and play offline
 
 **Done when:** a song can be found, downloaded, and played offline entirely in Freeify.

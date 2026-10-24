@@ -11,6 +11,7 @@ struct YouTubeSearchView: View {
     @State private var isSearching = false
     @State private var hasSearched = false
     @State private var downloadingID: String?
+    @State private var progress: Double?
     @State private var errorMessage: String?
 
     var body: some View {
@@ -27,11 +28,15 @@ struct YouTubeSearchView: View {
                             Text([video.channel?.name, video.timeLength].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if downloadingID == video.videoId {
+                                ProgressView(value: progress ?? 0)
+                                Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
-                        if downloadingID == video.videoId {
-                            ProgressView()
-                        } else {
+                        if downloadingID != video.videoId {
                             Image(systemName: "arrow.down.circle")
                                 .foregroundStyle(.tint)
                         }
@@ -67,9 +72,9 @@ struct YouTubeSearchView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                        .disabled(downloadingID != nil)
                 }
             }
-            .disabled(downloadingID != nil)
             .alert("Something went wrong", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -84,7 +89,7 @@ struct YouTubeSearchView: View {
 
     private func search() {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty, downloadingID == nil else { return }
         isSearching = true
         Task { @MainActor in
             defer { isSearching = false }
@@ -98,11 +103,16 @@ struct YouTubeSearchView: View {
     }
 
     private func download(_ video: YTVideo) {
+        guard downloadingID == nil, !isSearching else { return }
         downloadingID = video.videoId
+        progress = nil
         Task { @MainActor in
             defer { downloadingID = nil }
             do {
-                try onDownloaded(try await YouTubeSource.download(video))
+                let saved = try await YouTubeSource.download(video) { value in
+                    Task { @MainActor in progress = value }
+                }
+                try onDownloaded(saved)
                 dismiss()
             } catch {
                 errorMessage = describe(error)
@@ -143,13 +153,33 @@ enum YouTubeSource {
             ],
             parameters: [.init(name: "prettyPrint", content: "false")]
         )
+        // YouTubeKit's search sends no visitor ID, so YouTube treats each search as a new
+        // visitor and the same search returns different results. Send the saved one.
+        model.customHeaders[.search] = HeadersList(
+            url: URL(string: "https://www.youtube.com/youtubei/v1/search")!,
+            method: .POST,
+            headers: [
+                .init(name: "Content-Type", content: "application/json"),
+                .init(name: "Origin", content: "https://www.youtube.com"),
+                .init(name: "X-Youtube-Client-Name", content: "1"),
+                .init(name: "X-Youtube-Client-Version", content: "2.20260213.01.00")
+            ],
+            customHeaders: ["X-Goog-Visitor-Id": .visitorData],
+            addQueryAfterParts: [.init(index: 0, encode: false, content: .query)],
+            httpBody: [
+                #"{"context":{"client":{"clientName":"WEB","clientVersion":"2.20260213.01.00","hl":"\#(model.selectedLocaleLanguageCode)"}},"query":""#,
+                #""}"#
+            ],
+            parameters: [.init(name: "prettyPrint", content: "false")]
+        )
         return model
     }()
 
     static func search(_ query: String) async throws -> [YTVideo] {
         let response = try await SearchResponse.sendThrowingRequest(youtubeModel: model, data: [.query: query])
         // Downloads without a visitor ID hit YouTube's bot check, reported as "Login is required".
-        if let visitorData = response.visitorData, !visitorData.isEmpty {
+        // Keep the first one so searches stay consistent.
+        if model.visitorData.isEmpty, let visitorData = response.visitorData, !visitorData.isEmpty {
             model.visitorData = visitorData
         }
         let videos = response.results.compactMap { $0 as? YTVideo }.filter(hasSongLength)
@@ -173,7 +203,10 @@ enum YouTubeSource {
     }
 
     // Use YouTube's AAC (audio/mp4) stream; AVAudioPlayer can't play its WebM/Opus formats.
-    static func download(_ video: YTVideo) async throws -> (title: String, filename: String) {
+    static func download(
+        _ video: YTVideo,
+        onProgress: @escaping @Sendable (Double) -> Void
+    ) async throws -> (title: String, filename: String) {
         let infos = try await video.fetchStreamingInfosWithDownloadFormatsThrowing(youtubeModel: model)
         let format = infos.downloadFormats
             .compactMap { $0 as? AudioOnlyFormat }
@@ -190,7 +223,10 @@ enum YouTubeSource {
         if let length = format.contentLength {
             request.setValue("bytes=0-\(length)", forHTTPHeaderField: "Range")
         }
-        let (temporary, response) = try await URLSession.shared.download(for: request)
+        let (temporary, response) = try await URLSession.shared.download(
+            for: request,
+            delegate: ProgressDelegate(expectedBytes: format.contentLength, onProgress: onProgress)
+        )
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(status) else {
             try? FileManager.default.removeItem(at: temporary)
@@ -205,6 +241,31 @@ enum YouTubeSource {
         } catch {
             try? FileManager.default.removeItem(at: temporary)
             throw error
+        }
+    }
+
+    // Reports download progress in whole-percent steps.
+    private final class ProgressDelegate: NSObject, URLSessionTaskDelegate {
+        let expectedBytes: Int?
+        let onProgress: @Sendable (Double) -> Void
+        private var observation: NSKeyValueObservation?
+        private var lastPercent = -1
+
+        init(expectedBytes: Int?, onProgress: @escaping @Sendable (Double) -> Void) {
+            self.expectedBytes = expectedBytes
+            self.onProgress = onProgress
+        }
+
+        func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+            observation = task.progress.observe(\.completedUnitCount) { [weak self] progress, _ in
+                guard let self else { return }
+                let total = self.expectedBytes.map { Int64($0) } ?? progress.totalUnitCount
+                guard total > 0 else { return }
+                let percent = Int(min(Double(progress.completedUnitCount) / Double(total), 1) * 100)
+                guard percent != self.lastPercent else { return }
+                self.lastPercent = percent
+                self.onProgress(Double(percent) / 100)
+            }
         }
     }
 
