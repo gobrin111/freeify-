@@ -10,6 +10,13 @@ struct LibraryView: View {
     @State private var showingImporter = false
     @State private var isImporting = false
     @State private var importError: String?
+    @State private var searchText = ""
+
+    private var filteredTracks: [Track] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return tracks }
+        return tracks.filter { $0.title.localizedStandardContains(query) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -18,13 +25,19 @@ struct LibraryView: View {
                     ContentUnavailableView {
                         Label("Your offline library", systemImage: "music.note.list")
                     } description: {
-                        Text("Import an audio file to start listening. Your music stays on this iPhone.")
+                        Text("Add songs from Files to save a copy in Freeify. Only songs you add appear in this library.")
                     } actions: {
                         importButton
                             .buttonStyle(.borderedProminent)
                     }
+                } else if filteredTracks.isEmpty {
+                    ContentUnavailableView {
+                        Label("No matching songs", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Try another title, or add a song from Files to your Freeify library.")
+                    }
                 } else {
-                    List(tracks) { track in
+                    List(filteredTracks) { track in
                         Button {
                             player.load(track)
                         } label: {
@@ -36,7 +49,7 @@ struct LibraryView: View {
                                     Text(track.title)
                                         .foregroundStyle(.primary)
                                         .lineLimit(2)
-                                    Text("Available offline")
+                                    Text("Saved in Freeify · Offline")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -50,6 +63,11 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Freeify")
+            .searchable(
+                text: $searchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Search Freeify library"
+            )
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     importButton
@@ -99,7 +117,7 @@ struct LibraryView: View {
         Button {
             showingImporter = true
         } label: {
-            Label("Import audio", systemImage: "plus")
+            Label("Add from Files", systemImage: "plus")
         }
         .disabled(isImporting)
     }
@@ -109,7 +127,7 @@ struct LibraryView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(player.title).font(.headline).lineLimit(1)
-                    Text("On this iPhone").font(.caption).foregroundStyle(.secondary)
+                    Text("Saved in Freeify").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button {

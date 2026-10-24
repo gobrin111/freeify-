@@ -1,8 +1,14 @@
 name: Build Freeify for iPhone
 
-# Run on demand so developing from Windows does not spend Mac build minutes
-# on every commit. This workflow must first be pushed to the default branch.
+# Build app changes automatically; documentation-only pushes skip Mac usage.
+# Manual builds remain available for retries and other branches.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'Freeify/**'
+      - 'Freeify.xcodeproj/**'
+      - '.github/workflows/ios-build.yml'
   workflow_dispatch:
 
 permissions:
