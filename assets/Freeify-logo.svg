@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254" role="img" aria-labelledby="title desc">
+<title id="title">Freeify logo</title><desc id="desc">Vivid flowing ribbon loop surrounding a play triangle on navy. Editable vector recreation.</desc>
+<defs>
+<linearGradient id="base" x1="300" y1="480" x2="1000" y2="700" gradientUnits="userSpaceOnUse"><stop stop-color="#00dbe9"/><stop offset=".45" stop-color="#133bff"/><stop offset=".7" stop-color="#7400ff"/><stop offset="1" stop-color="#ff03d5"/></linearGradient>
+<linearGradient id="top" x1="665" y1="185" x2="530" y2="480" gradientUnits="userSpaceOnUse"><stop stop-color="#fff449"/><stop offset=".4" stop-color="#ff9960"/><stop offset=".72" stop-color="#ff389a"/><stop offset="1" stop-color="#fa00e8"/></linearGradient>
+<linearGradient id="upperfold" x1="370" y1="300" x2="890" y2="585" gradientUnits="userSpaceOnUse"><stop stop-color="#b000f5"/><stop offset=".35" stop-color="#3000cb"/><stop offset=".67" stop-color="#4c00e0"/><stop offset="1" stop-color="#9100ff"/></linearGradient>
+<linearGradient id="left" x1="330" y1="380" x2="515" y2="850" gradientUnits="userSpaceOnUse"><stop stop-color="#6025ff"/><stop offset=".36" stop-color="#008aff"/><stop offset=".75" stop-color="#00d7ed"/><stop offset="1" stop-color="#00c7de"/></linearGradient>
+<linearGradient id="right" x1="1090" y1="580" x2="752" y2="826" gradientUnits="userSpaceOnUse"><stop stop-color="#ffec00"/><stop offset=".28" stop-color="#ff7792"/><stop offset=".6" stop-color="#fc00dc"/><stop offset="1" stop-color="#6014ff"/></linearGradient>
+<linearGradient id="bottom" x1="218" y1="835" x2="630" y2="840" gradientUnits="userSpaceOnUse"><stop stop-color="#8bff64"/><stop offset=".23" stop-color="#00e9ae"/><stop offset=".58" stop-color="#00badf"/><stop offset="1" stop-color="#0048ff"/></linearGradient>
+<linearGradient id="tail" x1="330" y1="997" x2="600" y2="845" gradientUnits="userSpaceOnUse"><stop stop-color="#00f394"/><stop offset=".6" stop-color="#00bcd9"/><stop offset="1" stop-color="#0086fc"/></linearGradient>
+<linearGradient id="highlight" x1="420" y1="202" x2="777" y2="329" gradientUnits="userSpaceOnUse"><stop stop-color="#ffb863"/><stop offset="1" stop-color="#fff354"/></linearGradient>
+<clipPath id="cutout"><path clip-rule="evenodd" d="M0 0H1254V1254H0Z M529 501 C529 470 549 455 577 472 L816 600 C842 614 842 638 816 654 L574 779 C548 795 529 788 529 758 Z"/></clipPath>
+</defs>
+<rect id="background" width="1254" height="1254" fill="#050321"/>
+<g id="symbol" clip-path="url(#cutout)">
+<path fill="url(#base)" d="M299 547 C269 441 290 342 373 259 C442 191 532 155 615 161 C718 164 789 233 831 319 C862 376 883 413 916 444 C1000 488 1071 539 1097 613 C1141 738 1064 874 961 910 C866 944 728 894 628 885 C630 925 642 977 613 1014 C583 1053 517 1080 449 1067 C343 1048 245 980 205 894 C163 801 195 711 240 648 Z"/>
+<path fill="url(#right)" d="M914 444 C1005 491 1072 541 1097 613 C1141 738 1064 874 961 910 C866 944 728 894 628 885 C631 799 704 746 811 756 C913 760 1014 742 1012 659 C1011 579 971 504 914 444 Z"/>
+<path fill="url(#upperfold)" d="M300 547 C266 437 300 348 371 304 C451 253 518 316 583 373 C648 432 731 453 807 469 C874 484 926 475 914 444 C969 475 991 522 978 568 C959 620 921 670 875 701 C796 674 738 600 648 536 C567 478 516 397 458 396 C389 392 384 476 427 557 C462 619 516 681 576 736 C433 690 348 618 300 547 Z"/>
+<path fill="url(#top)" d="M333 310 C401 217 514 153 615 161 C718 164 789 233 831 319 C869 397 892 419 922 467 C952 510 938 539 893 534 C778 527 685 465 593 386 C503 307 433 227 333 310 Z"/>
+<path fill="url(#highlight)" d="M377 257 C445 194 535 155 615 161 C708 163 770 218 805 281 C849 361 810 371 753 354 C644 326 539 238 454 264 C419 273 396 281 377 294 Z"/>
+<path fill="url(#left)" d="M300 547 C276 467 286 395 320 353 C300 466 346 517 425 560 C393 503 383 451 417 416 C459 370 506 395 550 435 C602 483 623 499 673 529 L810 599 C842 614 842 639 815 654 L574 779 C539 791 528 776 529 748 L529 502 C528 465 551 455 577 472 C541 436 503 428 477 450 C430 491 472 566 502 613 C544 682 597 725 668 748 C731 722 807 685 875 701 C808 742 730 766 683 804 C631 841 617 881 629 942 C589 860 511 813 447 762 C374 702 336 637 300 547 Z"/>
+<path fill="url(#bottom)" d="M299 547 C321 638 366 701 447 762 C518 817 590 859 623 928 C646 977 617 1018 576 1043 C512 1087 435 1074 361 1037 C287 1004 228 954 205 894 C164 803 194 712 240 648 Z"/>
+<path fill="url(#tail)" d="M200 710 C173 808 226 839 306 863 C405 890 514 918 576 973 C613 1005 599 1032 576 1043 C512 1087 435 1074 361 1037 C287 1004 228 954 205 894 C180 836 182 768 200 710 Z"/>
+</g><path id="play" fill="#050321" d="M529 501 C529 470 549 455 577 472 L816 600 C842 614 842 638 816 654 L574 779 C548 795 529 788 529 758 Z"/></svg>
