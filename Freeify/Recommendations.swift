@@ -142,7 +142,8 @@ enum MadeForYou {
         let mixes: [Mix]
     }
 
-    static var today: Int { Int(Date().timeIntervalSince1970 / 86_400) }
+    // Days count from your local midnight, so mixes change overnight wherever you are.
+    static var today: Int { Calendar.current.ordinality(of: .day, in: .era, for: Date()) ?? 0 }
 
     // Today's mixes, from the saved copy when there is one, so they also show offline.
     @MainActor

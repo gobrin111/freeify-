@@ -21,6 +21,8 @@ struct DiscoverView: View {
     @Query(DiscoverView.recentListens) private var listens: [ListenEvent]
     @Query private var tracks: [Track]
     @State private var madeForYou: Loadable<[Mix]> = .loading
+    @State private var mixesDay: Int?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var charts: Loadable<[BrowseCard]> = .loading
     @State private var newReleases: Loadable<[BrowseCard]> = .loading
     @State private var moods: Loadable<[MoodTile]> = .loading
@@ -65,6 +67,12 @@ struct DiscoverView: View {
             }
             .task { await load(refreshMixes: false) }
             .refreshable { await load(refreshMixes: true) }
+            // Freeify can stay open overnight, so check for a new day whenever Discover is
+            // shown again or the app comes back.
+            .onAppear { refreshMixesIfNewDay() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { refreshMixesIfNewDay() }
+            }
         }
     }
 
@@ -186,9 +194,25 @@ struct DiscoverView: View {
         async let moodTiles = try? YouTubeSource.moods()
         let (loadedMixes, loadedCharts, loadedReleases, loadedMoods) = await (mixes, chartCards, releaseCards, moodTiles)
         madeForYou = loadedMixes.map { .loaded($0) } ?? .failed
+        if loadedMixes != nil { mixesDay = MadeForYou.today }
         charts = loadedCharts.map { .loaded($0) } ?? .failed
         newReleases = loadedReleases.map { .loaded($0) } ?? .failed
         moods = loadedMoods.map { .loaded($0) } ?? .failed
+    }
+
+    // Today's mixes come from the saved copy when there is one, so this only builds new
+    // mixes on the first visit of a day.
+    private func refreshMixesIfNewDay() {
+        guard let mixesDay, mixesDay != MadeForYou.today else { return }
+        Task {
+            madeForYou = .loading
+            if let mixes = try? await MadeForYou.mixes(in: modelContext) {
+                madeForYou = .loaded(mixes)
+                self.mixesDay = MadeForYou.today
+            } else {
+                madeForYou = .failed
+            }
+        }
     }
 }
 

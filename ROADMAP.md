@@ -106,7 +106,7 @@ page change breaks only that row. History and feedback never leave the phone.
 - [ ] 🔨 Seeds: your top songs and artists, rotated so mixes change
 - [ ] 🔨 Candidates: radios from the seeds, minus songs already in the library
 - [ ] 🔨 Ranker (rules): artist affinity, how many seeds suggested a song, at most 2 songs per artist per mix
-- [ ] 🔨 Rows: "Mix from *song*" for three seeds and "Discover Mix" (artists you don't have yet), refreshed daily or by pulling down, and saved for offline viewing
+- [ ] 🔨 Rows: "Mix from *song*" for three seeds and "Discover Mix" (artists you don't have yet), refreshed on the first visit after your local midnight (also when Freeify stays open overnight) or by pulling down, and saved for offline viewing
 - [ ] 🔨 Feedback: record whether each recommendation was shown, previewed, downloaded, liked, or dismissed with "Not interested"
 
 ### 5.5 Playing Discover lists
