@@ -9,7 +9,7 @@ struct PlayerBar: View {
 
     var body: some View {
         if let item = player.current {
-            HStack(spacing: Spacing.m) {
+            HStack(spacing: Spacing.xs) {
                 HStack(spacing: Spacing.m) {
                     PlayItemArtwork(item: item, size: 40)
                     VStack(alignment: .leading, spacing: 2) {
@@ -40,6 +40,17 @@ struct PlayerBar: View {
                 }
                 .disabled(!player.hasNext)
                 .accessibilityLabel("Next")
+                // Stops the music and clears the queue, hiding the bar.
+                Button {
+                    player.stop()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Palette.textSecondary)
+                        .frame(width: Spacing.target, height: Spacing.target)
+                }
+                .accessibilityLabel("Close player")
+                .accessibilityHint("Stops the music")
             }
             .buttonStyle(.borderless)
             .padding(.horizontal, Spacing.l)

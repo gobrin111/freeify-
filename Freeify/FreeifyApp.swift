@@ -72,7 +72,33 @@ struct RootView: View {
 extension View {
     // The mini player sits above the tab bar on every tab, which uses the dark surface.
     func withPlayerBar() -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) { PlayerBar() }
+        modifier(PlayerBarPlacement())
+    }
+}
+
+// Safe-area insets added outside a navigation stack don't reach the lists inside it, so
+// lists would scroll under the mini player. Instead, every scrolling screen in the tab gets
+// a bottom margin the bar's height while a song is loaded, and scrolls clear of it.
+private struct PlayerBarPlacement: ViewModifier {
+    @EnvironmentObject private var player: LocalPlayer
+    // Measured, since the bar grows with larger text.
+    @State private var barHeight: CGFloat = 64
+
+    func body(content: Content) -> some View {
+        let margin = player.current == nil ? 0 : barHeight + Spacing.s
+        content
+            .contentMargins(.bottom, margin, for: .scrollContent)
+            .contentMargins(.bottom, margin, for: .scrollIndicators)
+            .overlay(alignment: .bottom) {
+                PlayerBar()
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear
+                                .onAppear { barHeight = geometry.size.height }
+                                .onChange(of: geometry.size.height) { _, height in barHeight = height }
+                        }
+                    }
+            }
             .toolbarBackground(Palette.surface, for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
     }
