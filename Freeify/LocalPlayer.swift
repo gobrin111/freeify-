@@ -116,6 +116,11 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var streamEnd: NSObjectProtocol?
     // Bumped whenever a new song opens, so late stream callbacks for an old song are ignored.
     private var openGeneration = 0
+    // A streamed song's length as YouTube Music lists it. YouTube's audio streams can report
+    // a longer length and play silence past the song, or stall at its end, so playback
+    // finishes here instead.
+    private var listedLength: TimeInterval = 0
+    private var overrunTicks = 0
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var commands: [(MPRemoteCommand, Any)] = []
@@ -356,6 +361,8 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         audio?.stop()
         audio = nil
         unloadStream()
+        listedLength = 0
+        overrunTicks = 0
         current = item
         trackID = item.track?.id
         title = item.title
@@ -387,7 +394,8 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         case .stream(let song):
             // Streams can't be reopened offline, so they aren't remembered across launches.
             UserDefaults.standard.removeObject(forKey: Saved.trackID)
-            duration = Self.seconds(from: song.duration)
+            listedLength = Self.seconds(from: song.duration)
+            duration = listedLength
             isLoading = true
             loadStream(song, generation: openGeneration)
         }
@@ -421,7 +429,9 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                         guard let self, generation == self.openGeneration else { return }
                         if status == .readyToPlay {
                             self.isLoading = false
-                            if seconds.isFinite && seconds > 0 { self.duration = seconds }
+                            if seconds.isFinite && seconds > 0 {
+                                self.duration = self.listedLength > 0 ? min(seconds, self.listedLength) : seconds
+                            }
                             self.updateNowPlaying()
                         } else if status == .failed {
                             self.streamFailed(details ?? "unknown")
@@ -441,6 +451,23 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 guard generation == openGeneration else { return }
                 streamFailed(YouTubeSource.describe(error))
             }
+        }
+    }
+
+    // Called every timer tick (half a second) while playing.
+    private func finishStreamAtListedLength() {
+        guard let stream, listedLength > 0, isPlaying else { return }
+        let time = currentTime
+        let stalledAtEnd = stream.timeControlStatus == .waitingToPlayAtSpecifiedRate && time >= listedLength - 1
+        if time >= listedLength + 1 || stalledAtEnd {
+            overrunTicks += 1
+        } else {
+            overrunTicks = 0
+        }
+        // Past the end: finish at once. Stalled near the end: give it 3 seconds to recover.
+        if overrunTicks >= (stalledAtEnd ? 6 : 1) {
+            overrunTicks = 0
+            finished(successfully: true)
         }
     }
 
@@ -556,6 +583,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 guard let self else { return }
                 self.elapsed = self.currentTime
                 if self.isPlaying && !self.isLoading { self.listen?.seconds += 0.5 }
+                self.finishStreamAtListedLength()
                 if self.trackID != nil { UserDefaults.standard.set(self.elapsed, forKey: Saved.time) }
             }
         }
