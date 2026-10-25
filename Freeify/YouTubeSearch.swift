@@ -129,19 +129,29 @@ struct YouTubeSearchView: View {
 struct RemoteSongRows: View {
     let songs: [SongResult]
     var startRadio: ((SongResult) -> Void)?
+    // For recommendations: called with "previewed" or "downloaded", and for "Not interested".
+    var onAction: ((SongResult, String) -> Void)?
+    var notInterested: ((SongResult) -> Void)?
     @Query private var tracks: [Track]
 
     var body: some View {
         // Video IDs already in the library, so the same song isn't downloaded twice.
         let libraryIDs = Set(tracks.compactMap { $0.youtubeID })
         ForEach(songs) { song in
-            RemoteSongRow(song: song, inLibrary: libraryIDs.contains(song.id))
+            RemoteSongRow(song: song, inLibrary: libraryIDs.contains(song.id), onAction: onAction)
                 .contextMenu {
                     if let startRadio {
                         Button {
                             startRadio(song)
                         } label: {
                             Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
+                        }
+                    }
+                    if let notInterested {
+                        Button {
+                            notInterested(song)
+                        } label: {
+                            Label("Not Interested", systemImage: "hand.thumbsdown")
                         }
                     }
                 }
@@ -152,6 +162,7 @@ struct RemoteSongRows: View {
 private struct RemoteSongRow: View {
     let song: SongResult
     let inLibrary: Bool
+    let onAction: ((SongResult, String) -> Void)?
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var preview: PreviewPlayer
@@ -187,6 +198,7 @@ private struct RemoteSongRow: View {
             }
             Spacer()
             Button {
+                if preview.songID != song.id { onAction?(song, "previewed") }
                 store.togglePreview(song)
             } label: {
                 if preview.songID == song.id && preview.isLoading {
@@ -206,6 +218,7 @@ private struct RemoteSongRow: View {
                     .accessibilityLabel("In library")
             } else if store.downloadingSongID != song.id {
                 Button {
+                    onAction?(song, "downloaded")
                     store.download(song, in: modelContext)
                 } label: {
                     Image(systemName: "arrow.down.circle").font(.title2)
@@ -292,7 +305,7 @@ final class PreviewPlayer: ObservableObject {
     }
 }
 
-struct SongResult: Identifiable, Hashable, Sendable {
+struct SongResult: Identifiable, Hashable, Codable, Sendable {
     let id: String // YouTube video ID
     let title: String
     let artist: String?

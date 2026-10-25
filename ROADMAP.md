@@ -102,12 +102,12 @@ page change breaks only that row. History and feedback never leave the phone.
 
 ### 5.4 Made for you (rule-based)
 
-- [ ] Taste profile: artist and song scores from history (recent plays count more, finished songs and likes count extra, skips count against)
-- [ ] Seeds: your top songs and artists, rotated so mixes change
-- [ ] Candidates: radios from the seeds, minus songs already in the library
-- [ ] Ranker (rules): artist affinity, how many seeds suggested a song, at most 2 songs per artist per mix
-- [ ] Rows: "Mix from *song*", "More like *artist*", and "Discover mix", refreshed daily and saved for offline viewing
-- [ ] Feedback: record whether each recommendation was shown, previewed, downloaded, liked, or dismissed with "Not interested"
+- [ ] 🔨 Taste profile: artist and song scores from history (recent plays count more, finished songs and likes count extra, skips count against)
+- [ ] 🔨 Seeds: your top songs and artists, rotated so mixes change
+- [ ] 🔨 Candidates: radios from the seeds, minus songs already in the library
+- [ ] 🔨 Ranker (rules): artist affinity, how many seeds suggested a song, at most 2 songs per artist per mix
+- [ ] 🔨 Rows: "Mix from *song*" for three seeds and "Discover Mix" (artists you don't have yet), refreshed daily or by pulling down, and saved for offline viewing
+- [ ] 🔨 Feedback: record whether each recommendation was shown, previewed, downloaded, liked, or dismissed with "Not interested"
 
 **Done when:** Discover shows personal mixes that change with what you play, and
 feedback is being recorded for milestone 6.

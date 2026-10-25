@@ -8,7 +8,7 @@ struct FreeifyApp: App {
         WindowGroup {
             RootView()
         }
-        .modelContainer(for: [Track.self, Playlist.self, ListenEvent.self])
+        .modelContainer(for: [Track.self, Playlist.self, ListenEvent.self, RecommendationEvent.self])
     }
 }
 

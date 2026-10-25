@@ -82,6 +82,14 @@ final class LibraryStore: ObservableObject {
 
     func toggleLike(_ track: Track, in context: ModelContext) {
         track.likedAt = track.likedAt == nil ? Date() : nil
+        // Liking a song that was recommended is feedback for "Made for you".
+        if track.likedAt != nil, let videoID = track.youtubeID {
+            var shown = FetchDescriptor<RecommendationEvent>(predicate: #Predicate { $0.youtubeID == videoID })
+            shown.fetchLimit = 1
+            if let event = try? context.fetch(shown).first {
+                context.insert(RecommendationEvent(youtubeID: videoID, mix: event.mix, action: "liked", features: event.features))
+            }
+        }
         save(context)
     }
 
