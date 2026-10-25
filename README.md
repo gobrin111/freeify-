@@ -6,24 +6,27 @@ Progress and next steps are tracked in [ROADMAP.md](ROADMAP.md).
 
 ## Features
 
-- **Search YouTube Music** (globe button): searches the Songs tab, with cover art and more results as you scroll, and downloads a
-  song's audio with [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned to a
-  specific commit, plus its cover art. The play button streams a preview without saving it. This is unofficial and can break when
-  YouTube changes; `ROADMAP.md` notes what to check first.
-- **Add from Files**: copy an audio file into Freeify. Freeify never scans the
-  phone's files; audio lives in its private Application Support/Audio folder.
-- **Library**: search by title or artist, sort by recently added, title, or
-  artist, and see how much space saved songs use.
-- **Removing songs**: swipe left to remove a song, or to remove only its download
-  (YouTube songs stay listed and download again with a tap). Select several songs
-  from the More (…) menu.
-- **Liked Songs and playlists**: swipe right or long-press a song to like it or
-  add it to a playlist. Playlists can be renamed and reordered.
-- **Playback**: the list a song is played from becomes the queue. Next/previous,
+Freeify has three tabs, with the player bar above them.
+
+- **Discover:** recently played songs, "Made for you" mixes built from what you
+  play, like, and save, plus YouTube Music charts, new releases, and moods &
+  genres. Listening history and recommendation feedback stay on the phone.
+- **Search:** YouTube Music's Songs tab, with cover art and more results as you
+  scroll. Play streams a preview without saving; download saves the song with its
+  cover art using [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned to a
+  specific commit. Long-press a result to start a radio of similar songs. This is
+  unofficial and can break when YouTube changes; `ROADMAP.md` notes what to check
+  first.
+- **Library:** search by title or artist, sort, and see how much space saved
+  songs use. Swipe left to remove a song or only its download (YouTube songs
+  download again with a tap); select several songs from the More (…) menu. Swipe
+  right or long-press to like a song or add it to a playlist. Liked Songs and
+  Playlists are at the top. **Add from Files** copies an audio file into Freeify;
+  Freeify never scans the phone's files.
+- **Playback:** the list a song is played from becomes the queue. Next/previous,
   shuffle, and repeat work in the app and on the lock screen. Long-press a song
-  for Play Next or Add to Queue. Tap the player bar for the full-screen player
-  and queue.
-- Shuffle, repeat, and the last song are remembered after Freeify closes.
+  for Play Next, Add to Queue, or Start Radio. Tap the player bar for the
+  full-screen player and queue. Shuffle, repeat, and the last song are remembered.
 
 There are no music service credentials, backend, or cloud library sync.
 
@@ -105,3 +108,8 @@ After installing a new build:
 5. Like a song and add it to a playlist; both should persist after reopening Freeify.
 6. Remove a download and download it again from the library; remove a song entirely.
 7. Close and reopen Freeify; the last song should be paused where it stopped.
+8. In Discover, recently played songs should appear after playing a few. Charts,
+   new releases, and moods should open lists you can preview and download.
+9. After playing, liking, or downloading a few YouTube Music songs, pull down on
+   Discover; "Made for you" should show mixes. Long-press a song there and choose
+   Not Interested; it should disappear.

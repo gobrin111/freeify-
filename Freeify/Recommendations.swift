@@ -190,8 +190,10 @@ enum MadeForYou {
         var candidates: [String: Candidate] = [:]
         for (seed, songs) in radios {
             for (position, song) in songs.enumerated() where !excluded.contains(song.id) {
-                candidates[song.id, default: Candidate(song: song, seedIDs: [], bestPosition: position)].seedIDs.insert(seed.id)
-                candidates[song.id]?.bestPosition = min(candidates[song.id]?.bestPosition ?? position, position)
+                var candidate = candidates[song.id] ?? Candidate(song: song, seedIDs: [], bestPosition: position)
+                candidate.seedIDs.insert(seed.id)
+                candidate.bestPosition = min(candidate.bestPosition, position)
+                candidates[song.id] = candidate
             }
         }
 
