@@ -20,6 +20,8 @@
 		A1000000000000000000000D /* DiscoverViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* DiscoverViews.swift */; };
 		A1000000000000000000000E /* Recommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* Recommendations.swift */; };
 		A1000000000000000000000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* Assets.xcassets */; };
+		A10000000000000000000010 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* Theme.swift */; };
+		A10000000000000000000011 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +40,8 @@
 		A2000000000000000000000D /* DiscoverViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverViews.swift; sourceTree = "<group>"; };
 		A2000000000000000000000E /* Recommendations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recommendations.swift; sourceTree = "<group>"; };
 		A2000000000000000000000F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A20000000000000000000010 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,6 +70,8 @@
 				A2000000000000000000000D /* DiscoverViews.swift */,
 				A2000000000000000000000E /* Recommendations.swift */,
 				A2000000000000000000000F /* Assets.xcassets */,
+				A20000000000000000000010 /* Theme.swift */,
+				A20000000000000000000011 /* SettingsView.swift */,
 				A20000000000000000000005 /* Info.plist */,
 			);
 			path = Freeify;
@@ -125,7 +131,7 @@
 		A30000000000000000000002 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C, A1000000000000000000000D, A1000000000000000000000E);
+			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000008, A10000000000000000000009, A1000000000000000000000A, A1000000000000000000000B, A1000000000000000000000C, A1000000000000000000000D, A1000000000000000000000E, A10000000000000000000010, A10000000000000000000011);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

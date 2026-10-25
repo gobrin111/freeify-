@@ -15,28 +15,33 @@ struct LikedSongsView: View {
     var body: some View {
         List {
             ForEach(liked) { track in
-                Button {
+                TrackListRow(track: track) {
                     store.select(track, in: liked, from: PlayContext(name: "Liked Songs", source: "liked", route: .library([.liked])),
                                  context: modelContext)
-                } label: {
-                    TrackRow(track: track)
+                } menu: {
+                    QueueMenuItems(track: track)
+                    Button {
+                        store.toggleLike(track, in: modelContext)
+                    } label: {
+                        Label("Unlike", systemImage: "heart.slash")
+                    }
                 }
-                .contextMenu { QueueMenuItems(track: track) }
                 .swipeActions(edge: .trailing) {
                     Button("Unlike") {
                         store.toggleLike(track, in: modelContext)
                     }
-                    .tint(.pink)
+                    .tint(Palette.pressed)
                 }
                 .disabled(store.downloadingTrackID == track.id)
             }
         }
+        .themedList()
         .overlay {
             if liked.isEmpty {
                 ContentUnavailableView {
                     Label("No liked songs", systemImage: "heart")
                 } description: {
-                    Text("Swipe right on a song in your library and tap the heart to like it.")
+                    Text("Tap More on a song in your library, then Like.")
                 }
             }
         }
@@ -58,6 +63,14 @@ struct PlaylistsView: View {
                 NavigationLink(value: LibraryRoute.playlist(playlist.id)) {
                     PlaylistLabel(playlist: playlist)
                 }
+                .themedRow()
+                .contextMenu {
+                    Button(role: .destructive) {
+                        playlistToDelete = playlist
+                    } label: {
+                        Label("Delete Playlist", systemImage: "trash")
+                    }
+                }
                 .swipeActions(edge: .trailing) {
                     Button("Delete", role: .destructive) {
                         playlistToDelete = playlist
@@ -73,10 +86,11 @@ struct PlaylistsView: View {
                     Text("Create a playlist, then add songs from your library.")
                 } actions: {
                     Button("New Playlist") { naming = true }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(PrimaryActionStyle())
                 }
             }
         }
+        .themedList()
         .navigationTitle("Playlists")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -130,14 +144,25 @@ struct PlaylistDetailView: View {
     var body: some View {
         List {
             ForEach(songs) { track in
-                Button {
+                TrackListRow(track: track) {
                     store.select(track, in: songs, from: PlayContext(
                         name: playlist.name, source: "playlist", route: .library([.playlists, .playlist(playlist.id)])
                     ), context: modelContext)
-                } label: {
-                    TrackRow(track: track)
+                } menu: {
+                    QueueMenuItems(track: track)
+                    Button {
+                        store.toggleLike(track, in: modelContext)
+                    } label: {
+                        Label(track.likedAt == nil ? "Like" : "Unlike", systemImage: track.likedAt == nil ? "heart" : "heart.slash")
+                    }
+                    // Removing from a playlist keeps the song in the library.
+                    Button {
+                        playlist.trackIDs.removeAll { $0 == track.id }
+                        store.save(modelContext)
+                    } label: {
+                        Label("Remove from Playlist", systemImage: "minus.circle")
+                    }
                 }
-                .contextMenu { QueueMenuItems(track: track) }
                 .disabled(store.downloadingTrackID == track.id)
             }
             .onMove { from, to in
@@ -160,10 +185,11 @@ struct PlaylistDetailView: View {
                     Text("Add songs from your library to this playlist.")
                 } actions: {
                     Button("Add Songs") { addingSongs = true }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(PrimaryActionStyle())
                 }
             }
         }
+        .themedList()
         .navigationTitle(playlist.name)
         .safeAreaInset(edge: .top) { DownloadAllBanner(name: playlist.name) }
         .toolbar {
@@ -191,7 +217,7 @@ struct PlaylistDetailView: View {
                         Label("Rename", systemImage: "pencil")
                     }
                 } label: {
-                    Label("More", systemImage: "ellipsis.circle")
+                    Label("More", systemImage: "ellipsis")
                 }
             }
         }
@@ -241,13 +267,21 @@ struct SongPickerView: View {
     var body: some View {
         NavigationStack {
             List(available, selection: $selection) { track in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(track.title).lineLimit(2)
-                    if let artist = track.artist {
-                        Text(artist).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: Spacing.m) {
+                    ArtworkView(track: track, size: 40)
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(track.title)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(Palette.textPrimary)
+                            .lineLimit(1)
+                        if let artist = track.artist {
+                            Text(artist).font(.subheadline).foregroundStyle(Palette.textSecondary).lineLimit(1)
+                        }
                     }
                 }
+                .themedRow()
             }
+            .themedList()
             .environment(\.editMode, .constant(.active))
             .overlay {
                 if available.isEmpty {
@@ -269,6 +303,7 @@ struct SongPickerView: View {
                 }
             }
         }
+        .presentationBackground(Palette.raised)
     }
 }
 
@@ -289,7 +324,10 @@ struct AddToPlaylistView: View {
                     naming = true
                 } label: {
                     Label("New Playlist", systemImage: "plus")
+                        .foregroundStyle(Palette.hair)
+                        .frame(minHeight: Spacing.target)
                 }
+                .themedRow()
                 ForEach(playlists) { playlist in
                     Button {
                         store.add(tracks, to: playlist, in: modelContext)
@@ -297,9 +335,10 @@ struct AddToPlaylistView: View {
                     } label: {
                         PlaylistLabel(playlist: playlist)
                     }
-                    .foregroundStyle(.primary)
+                    .themedRow()
                 }
             }
+            .themedList()
             .navigationTitle(tracks.count == 1 ? "Add to Playlist" : "Add \(tracks.count) Songs")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -316,6 +355,7 @@ struct AddToPlaylistView: View {
                 Button("Cancel", role: .cancel) { newName = "" }
             }
         }
+        .presentationBackground(Palette.raised)
     }
 }
 
@@ -323,18 +363,22 @@ struct PlaylistLabel: View {
     let playlist: Playlist
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Spacing.m) {
             Image(systemName: "music.note.list")
-                .foregroundStyle(.tint)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(playlist.name).lineLimit(1)
+                .foregroundStyle(Palette.hair)
+                .frame(width: Spacing.thumbnail, height: Spacing.thumbnail)
+                .background(Palette.raised, in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(playlist.name)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
                 Text("\(playlist.trackIDs.count) \(playlist.trackIDs.count == 1 ? "song" : "songs")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.textSecondary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.m)
     }
 }
 

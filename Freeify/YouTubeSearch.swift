@@ -26,18 +26,23 @@ struct YouTubeSearchView: View {
                 if continuation != nil {
                     Group {
                         if loadMoreFailed {
-                            Button("Load More") { loadMore() }
+                            Button("Couldn’t load more · Retry") { loadMore() }
+                                .foregroundStyle(Palette.hair)
+                                .frame(minHeight: Spacing.target)
                         } else {
                             ProgressView()
+                                .tint(Palette.activity)
                                 .onAppear { loadMore() }
                         }
                     }
                     .frame(maxWidth: .infinity)
+                    .themedRow()
                 }
             }
+            .themedList()
             .overlay {
                 if isSearching {
-                    ProgressView("Searching…")
+                    ProgressView("Searching…").tint(Palette.activity)
                 } else if results.isEmpty && hasSearched {
                     ContentUnavailableView {
                         Label("No songs found", systemImage: "magnifyingglass")
@@ -137,35 +142,53 @@ struct RemoteSongRows: View {
     @Query private var tracks: [Track]
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var store: LibraryStore
+    @EnvironmentObject private var player: LocalPlayer
 
     var body: some View {
         // Video IDs already in the library, so the same song isn't downloaded twice.
         let libraryIDs = Set(tracks.compactMap { $0.youtubeID })
         ForEach(songs) { song in
-            RemoteSongRow(
-                song: song,
-                inLibrary: libraryIDs.contains(song.id),
-                play: playContext.map { context -> () -> Void in
-                    { store.playRemote(song, in: songs, from: context, context: modelContext) }
-                },
-                onAction: onAction
-            )
-                .contextMenu {
-                    if let startRadio {
-                        Button {
-                            startRadio(song)
-                        } label: {
-                            Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
-                        }
+            HStack(spacing: 0) {
+                RemoteSongRow(
+                    song: song,
+                    inLibrary: libraryIDs.contains(song.id),
+                    play: playContext.map { context -> () -> Void in
+                        { store.playRemote(song, in: songs, from: context, context: modelContext) }
+                    },
+                    onAction: onAction
+                )
+                if startRadio != nil || notInterested != nil {
+                    Menu {
+                        menuItems(for: song)
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .foregroundStyle(Palette.textSecondary)
+                            .frame(width: Spacing.target, height: Spacing.target)
+                            .contentShape(Rectangle())
                     }
-                    if let notInterested {
-                        Button {
-                            notInterested(song)
-                        } label: {
-                            Label("Not Interested", systemImage: "hand.thumbsdown")
-                        }
-                    }
+                    .accessibilityLabel("More for \(song.title)")
                 }
+            }
+            .themedRow(current: playContext != nil && player.current?.youtubeID == song.id)
+            .contextMenu { menuItems(for: song) }
+        }
+    }
+
+    @ViewBuilder
+    private func menuItems(for song: SongResult) -> some View {
+        if let startRadio {
+            Button {
+                startRadio(song)
+            } label: {
+                Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
+            }
+        }
+        if let notInterested {
+            Button {
+                notInterested(song)
+            } label: {
+                Label("Not Interested", systemImage: "hand.thumbsdown")
+            }
         }
     }
 }
@@ -184,88 +207,96 @@ private struct RemoteSongRow: View {
     private var isCurrent: Bool { play != nil && player.current?.youtubeID == song.id }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Spacing.m) {
             // Streamed for display only; nothing here is saved.
             AsyncImage(url: song.thumbnailURL) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
-                Image(systemName: "music.note")
-                    .foregroundStyle(.tint)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.secondary.opacity(0.15))
+                ArtworkPlaceholder(size: Spacing.thumbnail)
             }
-            .frame(width: 44, height: 44)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .frame(width: Spacing.thumbnail, height: Spacing.thumbnail)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(song.title)
-                    .foregroundStyle(isCurrent ? Color.mint : .primary)
-                    .lineLimit(2)
-                Text([song.artist, song.duration, inLibrary ? "In library" : nil]
-                    .compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                Text([song.artist, song.duration].compactMap { $0 }.joined(separator: " · "))
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
                 if store.downloadingSongID == song.id {
-                    ProgressView(value: store.downloadProgress ?? 0)
-                    Text(store.downloadProgress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                    StatusChip(
+                        label: store.downloadProgress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…",
+                        systemImage: "arrow.down.circle",
+                        kind: .downloading
+                    )
+                } else if inLibrary {
+                    StatusChip(label: "Saved", systemImage: "checkmark", kind: .saved)
                 }
             }
-            Spacer()
-            if let play {
-                Button {
-                    if isCurrent {
-                        player.togglePlayback()
-                    } else {
-                        onAction?(song, "previewed")
-                        play()
-                    }
-                } label: {
-                    if isCurrent && player.isLoading {
-                        ProgressView()
-                    } else {
-                        Image(systemName: isCurrent && player.isPlaying ? "pause.circle" : "play.circle")
-                            .font(.title2)
-                    }
-                }
-                .frame(width: 32)
-                .accessibilityLabel(isCurrent && player.isPlaying ? "Pause" : "Play")
-            } else {
-                Button {
-                    if preview.songID != song.id { onAction?(song, "previewed") }
-                    store.togglePreview(song)
-                } label: {
-                    if preview.songID == song.id && preview.isLoading {
-                        ProgressView()
-                    } else {
-                        Image(systemName: preview.songID == song.id ? "stop.circle" : "play.circle")
-                            .font(.title2)
-                    }
-                }
-                .frame(width: 32)
-                .accessibilityLabel(preview.songID == song.id ? "Stop preview" : "Preview")
+            Spacer(minLength: Spacing.s)
+            if isCurrent {
+                PlayingIndicator(isPlaying: player.isPlaying)
             }
-            if inLibrary {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32)
-                    .accessibilityLabel("In library")
-            } else if store.downloadingSongID != song.id {
+            playButton
+            if !inLibrary && store.downloadingSongID != song.id {
                 Button {
                     onAction?(song, "downloaded")
                     store.download(song, in: modelContext)
                 } label: {
-                    Image(systemName: "arrow.down.circle").font(.title2)
+                    GlyphView(path: ThemeGlyph.download, size: 22)
+                        .foregroundStyle(store.isDownloading ? Palette.textMuted : Palette.textPrimary)
+                        .frame(width: Spacing.target, height: Spacing.target)
+                        .contentShape(Rectangle())
                 }
-                .frame(width: 32)
                 .disabled(store.isDownloading)
-                .accessibilityLabel("Download")
+                .accessibilityLabel("Download \(song.title)")
             }
         }
         .buttonStyle(.borderless)
-        .padding(.vertical, 6)
+        .padding(.vertical, Spacing.m)
+    }
+
+    // Discover lists play in the player; search previews. Both use the small round housing.
+    @ViewBuilder
+    private var playButton: some View {
+        let active = play != nil ? isCurrent : preview.songID == song.id
+        let loading = play != nil ? isCurrent && player.isLoading : active && preview.isLoading
+        let symbol = play != nil
+            ? (isCurrent && player.isPlaying ? "pause.fill" : "play.fill")
+            : (active ? "stop.fill" : "play.fill")
+        Button {
+            if let play {
+                if isCurrent {
+                    player.togglePlayback()
+                } else {
+                    onAction?(song, "previewed")
+                    play()
+                }
+            } else {
+                if !active { onAction?(song, "previewed") }
+                store.togglePreview(song)
+            }
+        } label: {
+            ZStack {
+                Circle().fill(Palette.action)
+                if loading {
+                    ProgressView().tint(Palette.inkOnAccent)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(Palette.inkOnAccent)
+                }
+            }
+            .frame(width: 34, height: 34)
+            .frame(width: Spacing.target, height: Spacing.target)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(play != nil
+            ? (isCurrent && player.isPlaying ? "Pause \(song.title)" : "Play \(song.title)")
+            : (active ? "Stop preview" : "Preview \(song.title)"))
     }
 }
 

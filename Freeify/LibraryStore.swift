@@ -3,7 +3,7 @@ import SwiftData
 import UIKit
 
 enum AppTab {
-    case discover, search, library
+    case library, discover, search, settings
 }
 
 // A page inside the Library tab.
@@ -39,7 +39,7 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var bulkDownload: BulkDownload?
     @Published var errorMessage: String?
     // Navigation, so the player can open the list a song is playing from.
-    @Published var selectedTab = AppTab.discover
+    @Published var selectedTab = AppTab.library
     @Published var discoverPath: [DiscoverRoute] = []
     @Published var libraryPath: [LibraryRoute] = []
     private var cancelBulk = false

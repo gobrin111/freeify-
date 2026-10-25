@@ -17,9 +17,15 @@ struct FreeifyApp: App {
 struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @StateObject private var store = LibraryStore()
+    // Drawn once; the root view refreshes often while downloads report progress.
+    private static let libraryIcon = GlyphView.image(ThemeGlyph.library)
 
     var body: some View {
         TabView(selection: $store.selectedTab) {
+            LibraryView()
+                .withPlayerBar()
+                .tabItem { Label { Text("Library") } icon: { Self.libraryIcon } }
+                .tag(AppTab.library)
             DiscoverView()
                 .withPlayerBar()
                 .tabItem { Label("Discover", systemImage: "sparkles") }
@@ -28,10 +34,10 @@ struct RootView: View {
                 .withPlayerBar()
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
                 .tag(AppTab.search)
-            LibraryView()
+            SettingsView()
                 .withPlayerBar()
-                .tabItem { Label("Library", systemImage: "music.note.list") }
-                .tag(AppTab.library)
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag(AppTab.settings)
         }
         .alert("Something went wrong", isPresented: Binding(
             get: { store.errorMessage != nil },
@@ -45,7 +51,8 @@ struct RootView: View {
         .environmentObject(store)
         .environmentObject(store.player)
         .environmentObject(store.preview)
-        .tint(.mint)
+        .tint(Palette.hair)
+        .preferredColorScheme(.dark)
         .task {
             store.attach(modelContext)
             restoreLastSong()
@@ -63,8 +70,10 @@ struct RootView: View {
 }
 
 extension View {
-    // The player bar sits above the tab bar on every tab.
+    // The mini player sits above the tab bar on every tab, which uses the dark surface.
     func withPlayerBar() -> some View {
         safeAreaInset(edge: .bottom, spacing: 0) { PlayerBar() }
+            .toolbarBackground(Palette.surface, for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
     }
 }

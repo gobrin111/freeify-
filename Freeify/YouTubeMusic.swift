@@ -12,7 +12,6 @@ struct BrowseCard: Identifiable, Hashable, Sendable {
 struct MoodTile: Identifiable, Hashable, Sendable {
     let id: String // params for its category page
     let title: String
-    let color: UInt32? // ARGB
 }
 
 // YouTube Music pages for Discover: song radio, charts, new releases, and moods.
@@ -49,8 +48,7 @@ extension YouTubeSource {
                   let params = dig(button, "clickCommand", "browseEndpoint", "params") as? String,
                   seen.insert(params).inserted
             else { return nil }
-            let color = (dig(button, "solid", "leftStripeColor") as? NSNumber).map { UInt32(truncatingIfNeeded: $0.int64Value) }
-            return MoodTile(id: params, title: title, color: color)
+            return MoodTile(id: params, title: title)
         }
     }
 

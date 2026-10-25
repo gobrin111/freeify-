@@ -1,56 +1,108 @@
 import SwiftData
 import SwiftUI
 
-// Compact controls pinned to the bottom of every tab. Tap to open the full player.
+// The mini player above the tab bar on every tab. Tap the song to open Now Playing;
+// the buttons only control playback.
 struct PlayerBar: View {
     @EnvironmentObject private var player: LocalPlayer
     @State private var showingPlayer = false
 
     var body: some View {
         if let item = player.current {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    PlayItemArtwork(item: item, size: 44)
+            HStack(spacing: Spacing.m) {
+                HStack(spacing: Spacing.m) {
+                    PlayItemArtwork(item: item, size: 40)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(player.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text(player.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Palette.textPrimary)
+                            .lineLimit(1)
                         Text(player.artist ?? (item.track == nil ? "Streaming" : "Saved in Freeify"))
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.textSecondary)
+                            .lineLimit(1)
                     }
-                    Spacer()
-                    Button {
-                        player.togglePlayback()
-                    } label: {
-                        if player.isLoading && player.isPlaying {
-                            ProgressView()
-                        } else {
-                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.title2)
-                        }
-                    }
-                    .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-                    Button {
-                        player.next()
-                    } label: {
-                        Image(systemName: "forward.fill").font(.title3)
-                    }
-                    .disabled(!player.hasNext)
-                    .accessibilityLabel("Next")
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.borderless)
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-                ProgressView(value: min(player.elapsed, max(player.duration, 0.01)), total: max(player.duration, 0.01))
-                    .progressViewStyle(.linear)
-                    .scaleEffect(x: 1, y: 0.5)
+                .contentShape(Rectangle())
+                .onTapGesture { showingPlayer = true }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Opens Now Playing")
+                RoundPlayButton(size: 40)
+                Button {
+                    player.next()
+                } label: {
+                    Image(systemName: "forward.end.fill")
+                        .font(.title3)
+                        .foregroundStyle(player.hasNext ? Palette.textPrimary : Palette.textMuted)
+                        .frame(width: Spacing.target, height: Spacing.target)
+                }
+                .disabled(!player.hasNext)
+                .accessibilityLabel("Next")
             }
-            .background(.regularMaterial)
-            .contentShape(Rectangle())
-            .onTapGesture { showingPlayer = true }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Opens the player")
+            .buttonStyle(.borderless)
+            .padding(.horizontal, Spacing.l)
+            .padding(.vertical, Spacing.s)
+            .frame(minHeight: 64)
+            .background(Palette.raised)
+            .overlay(alignment: .top) { ProgressStrip() }
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Palette.borderSubtle).frame(height: 1).accessibilityHidden(true)
+            }
             .sheet(isPresented: $showingPlayer) {
                 NowPlayingView()
             }
         }
+    }
+}
+
+// The mini player's 2-point cyan progress line. Informational only, not a scrub control.
+private struct ProgressStrip: View {
+    @EnvironmentObject private var player: LocalPlayer
+
+    var body: some View {
+        GeometryReader { geometry in
+            let fraction = player.duration > 0 ? min(player.elapsed / player.duration, 1) : 0
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Palette.borderSubtle)
+                Rectangle().fill(Palette.activity).frame(width: geometry.size.width * fraction)
+            }
+        }
+        .frame(height: 2)
+        .accessibilityHidden(true)
+    }
+}
+
+// Play/pause in the warm action color. Small sizes use a circle; Now Playing uses the octagon.
+struct RoundPlayButton: View {
+    let size: CGFloat
+    var octagon = false
+    @EnvironmentObject private var player: LocalPlayer
+
+    var body: some View {
+        Button {
+            player.togglePlayback()
+        } label: {
+            ZStack {
+                if octagon {
+                    PlayHousing().fill(Palette.action)
+                } else {
+                    Circle().fill(Palette.action)
+                }
+                if player.isLoading && player.isPlaying {
+                    ProgressView().tint(Palette.inkOnAccent)
+                } else {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: size * 0.38, weight: .bold))
+                        .foregroundStyle(Palette.inkOnAccent)
+                }
+            }
+            .frame(width: size, height: size)
+            .frame(minWidth: Spacing.target, minHeight: Spacing.target)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
     }
 }
 
@@ -67,69 +119,128 @@ struct PlayItemArtwork: View {
             AsyncImage(url: size > 60 ? song.artworkURL ?? song.thumbnailURL : song.thumbnailURL) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
-                Color.secondary.opacity(0.15)
+                ArtworkPlaceholder(size: size)
             }
             .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: max(5, size * 0.04)))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityHidden(true)
         }
     }
 }
 
-// Full-screen player: where it's playing from, artwork, like or download, seek bar,
+// Now Playing: where it's playing from, framed artwork, like or download, seek bar,
 // controls, and the queue.
 struct NowPlayingView: View {
     @EnvironmentObject private var player: LocalPlayer
     @EnvironmentObject private var store: LibraryStore
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Query private var tracks: [Track]
     @State private var showingQueue = false
 
     var body: some View {
-        VStack(spacing: 24) {
-            Capsule()
-                .fill(.secondary)
-                .frame(width: 40, height: 5)
-                .padding(.top, 8)
-            if let context = player.context {
-                playingFrom(context)
+        VStack(spacing: 0) {
+            header
+            // Large text scrolls; otherwise the artwork shrinks before the controls do.
+            if typeSize.isAccessibilitySize {
+                ScrollView { content(artworkSide: 200) }
+            } else {
+                content(artworkSide: nil)
             }
-            Spacer(minLength: 0)
-            if let item = player.current {
-                PlayItemArtwork(item: item, size: 300)
-                    .shadow(radius: 12, y: 6)
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(player.title).font(.title2.bold()).lineLimit(2)
-                        Text(player.artist ?? (item.track == nil ? "Streaming" : "Saved in Freeify"))
-                            .font(.title3).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    Spacer()
-                    likeOrDownload(item)
-                }
-            }
-            PlaybackPosition()
-            PlaybackButtons(playSize: 64)
-            HStack {
-                Spacer()
-                Button {
-                    showingQueue = true
-                } label: {
-                    Image(systemName: "list.bullet").font(.title3)
-                }
-                .accessibilityLabel("Queue")
-            }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 28)
-        .padding(.bottom)
+        .padding(.horizontal, Spacing.gutter)
+        .background(Palette.canvas)
+        .presentationBackground(Palette.canvas)
         .onChange(of: player.current?.id) { _, id in
             if id == nil { dismiss() }
         }
         .sheet(isPresented: $showingQueue) {
             QueueView()
         }
+    }
+
+    private var header: some View {
+        HStack {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.title3.weight(.semibold))
+                    .frame(width: Spacing.target, height: Spacing.target)
+            }
+            .accessibilityLabel("Close Now Playing")
+            Spacer()
+            Text("Now playing")
+                .font(.headline)
+                .foregroundStyle(Palette.textPrimary)
+            Spacer()
+            Menu {
+                if let item = player.current { moreItems(item) }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.title3)
+                    .frame(width: Spacing.target, height: Spacing.target)
+            }
+            .accessibilityLabel("More")
+        }
+        .foregroundStyle(Palette.textPrimary)
+        .padding(.top, Spacing.s)
+    }
+
+    @ViewBuilder
+    private func content(artworkSide: CGFloat?) -> some View {
+        VStack(spacing: Spacing.xl) {
+            if let context = player.context {
+                playingFrom(context)
+            }
+            if let item = player.current {
+                if let artworkSide {
+                    framedArtwork(item, side: artworkSide)
+                } else {
+                    GeometryReader { geometry in
+                        let side = max(120, min(geometry.size.width, geometry.size.height) - Spacing.l)
+                        framedArtwork(item, side: side)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .frame(maxHeight: 380)
+                }
+                HStack(alignment: .top, spacing: Spacing.m) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(player.title)
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(Palette.textPrimary)
+                            .lineLimit(2)
+                        Text(player.artist ?? (item.track == nil ? "Streaming" : "Saved in Freeify"))
+                            .font(.body)
+                            .foregroundStyle(Palette.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    likeOrDownload(item)
+                }
+            }
+            PlaybackPosition()
+            PlaybackButtons()
+            HStack {
+                Spacer()
+                Button {
+                    showingQueue = true
+                } label: {
+                    GlyphView(path: ThemeGlyph.queue, size: 24)
+                        .foregroundStyle(showingQueue ? Palette.activity : Palette.textPrimary)
+                        .frame(width: Spacing.target, height: Spacing.target)
+                }
+                .accessibilityLabel("Queue")
+            }
+        }
+        .padding(.vertical, Spacing.l)
+    }
+
+    private func framedArtwork(_ item: PlayItem, side: CGFloat) -> some View {
+        PlayItemArtwork(item: item, size: side)
+            .overlay { ArmorBrackets(isPlaying: player.isPlaying) }
+            .padding(6)
     }
 
     // "Playing from" a list, which opens again when tapped.
@@ -139,22 +250,48 @@ struct NowPlayingView: View {
             dismiss()
             store.show(route)
         } label: {
-            VStack(spacing: 2) {
-                Text("PLAYING FROM")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 4) {
-                    Text(context.name).lineLimit(1)
-                    if context.route != nil {
-                        Image(systemName: "chevron.right").font(.caption)
-                    }
+            HStack(spacing: Spacing.s) {
+                HairSlash(height: 14)
+                Text("Playing from")
+                    .foregroundStyle(Palette.textSecondary)
+                Text(context.name)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                if context.route != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(Palette.textSecondary)
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
             }
+            .font(.subheadline.weight(.medium))
+            .frame(minHeight: Spacing.target)
         }
         .disabled(context.route == nil)
         .accessibilityHint(context.route == nil ? "" : "Opens this list")
+    }
+
+    @ViewBuilder
+    private func moreItems(_ item: PlayItem) -> some View {
+        if case .track(let track) = item {
+            Button {
+                store.toggleLike(track, in: modelContext)
+            } label: {
+                Label(track.likedAt == nil ? "Like" : "Unlike", systemImage: track.likedAt == nil ? "heart" : "heart.slash")
+            }
+        }
+        Button {
+            showingQueue = true
+        } label: {
+            Label("Queue", systemImage: "list.bullet")
+        }
+        if let route = player.context?.route {
+            Button {
+                dismiss()
+                store.show(route)
+            } label: {
+                Label("Go to \(player.context?.name ?? "List")", systemImage: "arrow.up.forward")
+            }
+        }
     }
 
     // Saved songs can be liked; streamed songs can be downloaded.
@@ -167,23 +304,26 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: track.likedAt == nil ? "heart" : "heart.fill")
                     .font(.title2)
-                    .foregroundStyle(track.likedAt == nil ? Color.secondary : Color.pink)
+                    .foregroundStyle(track.likedAt == nil ? Palette.textSecondary : Palette.hair)
+                    .frame(width: Spacing.target, height: Spacing.target)
             }
             .accessibilityLabel(track.likedAt == nil ? "Like" : "Unlike")
         case .stream(let song):
             if tracks.contains(where: { $0.youtubeID == song.id }) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("In library")
+                StatusChip(label: "Saved", systemImage: "checkmark", kind: .saved)
             } else if store.downloadingSongID == song.id {
-                ProgressView(value: store.downloadProgress ?? 0)
-                    .frame(width: 44)
+                StatusChip(
+                    label: store.downloadProgress.map { "\(Int($0 * 100))%" } ?? "Preparing…",
+                    systemImage: "arrow.down.circle",
+                    kind: .downloading
+                )
             } else {
                 Button {
                     store.download(song, in: modelContext)
                 } label: {
-                    Image(systemName: "arrow.down.circle").font(.title2)
+                    GlyphView(path: ThemeGlyph.download, size: 24)
+                        .foregroundStyle(store.isDownloading ? Palette.textMuted : Palette.textPrimary)
+                        .frame(width: Spacing.target, height: Spacing.target)
                 }
                 .disabled(store.isDownloading)
                 .accessibilityLabel("Download")
@@ -192,23 +332,28 @@ struct NowPlayingView: View {
     }
 }
 
+// The seek slider with elapsed and remaining time. The slider is the standard, adjustable control.
 struct PlaybackPosition: View {
     @EnvironmentObject private var player: LocalPlayer
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: Spacing.xs) {
             Slider(
                 value: Binding(get: { player.elapsed }, set: { player.seek(to: $0) }),
                 in: 0...max(player.duration, 0.01)
             )
+            .tint(Palette.activity)
+            .frame(minHeight: Spacing.target)
             .accessibilityLabel("Playback position")
+            .accessibilityValue("\(timeLabel(player.elapsed)) of \(timeLabel(player.duration))")
             HStack {
                 Text(timeLabel(player.elapsed))
                 Spacer()
-                Text(timeLabel(player.duration))
+                Text("-" + timeLabel(max(player.duration - player.elapsed, 0)))
             }
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
+            .font(.footnote.weight(.medium).monospacedDigit())
+            .foregroundStyle(Palette.textSecondary)
+            .accessibilityHidden(true)
         }
     }
 
@@ -218,53 +363,64 @@ struct PlaybackPosition: View {
     }
 }
 
-// Shuffle · previous · play/pause · next · repeat.
+// Shuffle · previous · octagonal play/pause · next · repeat.
 struct PlaybackButtons: View {
-    let playSize: CGFloat
     @EnvironmentObject private var player: LocalPlayer
 
     var body: some View {
         HStack {
-            Button {
+            toggle(systemImage: "shuffle", isOn: player.shuffle, label: player.shuffle ? "Shuffle on" : "Shuffle off") {
                 player.toggleShuffle()
-            } label: {
-                Image(systemName: "shuffle")
-                    .foregroundStyle(player.shuffle ? Color.mint : .secondary)
             }
-            .accessibilityLabel(player.shuffle ? "Shuffle on" : "Shuffle off")
-            Spacer()
+            Spacer(minLength: 0)
             Button {
                 player.previous()
             } label: {
-                Image(systemName: "backward.fill").font(.title2)
+                Image(systemName: "backward.end.fill")
+                    .font(.title2)
+                    .foregroundStyle(Palette.textPrimary)
+                    .frame(width: Spacing.target, height: Spacing.target)
             }
             .accessibilityLabel("Previous")
-            Spacer()
-            Button {
-                player.togglePlayback()
-            } label: {
-                Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: playSize))
-            }
-            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-            Spacer()
+            Spacer(minLength: 0)
+            RoundPlayButton(size: 72, octagon: true)
+            Spacer(minLength: 0)
             Button {
                 player.next()
             } label: {
-                Image(systemName: "forward.fill").font(.title2)
+                Image(systemName: "forward.end.fill")
+                    .font(.title2)
+                    .foregroundStyle(player.hasNext ? Palette.textPrimary : Palette.textMuted)
+                    .frame(width: Spacing.target, height: Spacing.target)
             }
             .disabled(!player.hasNext)
             .accessibilityLabel("Next")
-            Spacer()
-            Button {
+            Spacer(minLength: 0)
+            toggle(
+                systemImage: player.repeatMode == .one ? "repeat.1" : "repeat",
+                isOn: player.repeatMode != .off,
+                label: repeatLabel
+            ) {
                 player.cycleRepeat()
-            } label: {
-                Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
-                    .foregroundStyle(player.repeatMode == .off ? .secondary : Color.mint)
             }
-            .accessibilityLabel(repeatLabel)
         }
         .buttonStyle(.borderless)
+    }
+
+    // Pink with a dot underneath when on, so the state isn't shown by color alone.
+    private func toggle(systemImage: String, isOn: Bool, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: systemImage)
+                    .font(.title3)
+                Circle()
+                    .frame(width: 4, height: 4)
+                    .opacity(isOn ? 1 : 0)
+            }
+            .foregroundStyle(isOn ? Palette.hair : Palette.textSecondary)
+            .frame(width: Spacing.target, height: Spacing.target)
+        }
+        .accessibilityLabel(label)
     }
 
     private var repeatLabel: String {
@@ -305,30 +461,39 @@ struct QueueView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Now Playing") {
-                    QueueRow(title: player.title, artist: player.artist)
+                if let current = player.current {
+                    Section {
+                        QueueRow(item: current).themedRow(current: true)
+                    } header: {
+                        SectionTitle(title: "Now playing").textCase(nil)
+                    }
                 }
                 if !player.upNext.isEmpty {
-                    Section("Next in Queue") {
+                    Section {
                         // The same song can be queued twice, so rows are keyed by position.
                         ForEach(Array(player.upNext.enumerated()), id: \.offset) { _, item in
-                            QueueRow(title: item.title, artist: item.artist)
+                            QueueRow(item: item).themedRow()
                         }
                         .onMove { player.moveUpNext(from: $0, to: $1) }
                         .onDelete { player.removeUpNext(at: $0) }
+                    } header: {
+                        SectionTitle(title: "Next in queue").textCase(nil)
                     }
                 }
                 let upcoming = player.upcoming
                 if !upcoming.isEmpty {
-                    Section("Next Up") {
+                    Section {
                         ForEach(upcoming) { item in
-                            QueueRow(title: item.title, artist: item.artist)
+                            QueueRow(item: item).themedRow()
                         }
                         .onMove { player.moveUpcoming(from: $0, to: $1) }
                         .onDelete { player.removeUpcoming(at: $0) }
+                    } header: {
+                        SectionTitle(title: "Next up").textCase(nil)
                     }
                 }
             }
+            .themedList()
             .navigationTitle("Queue")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -338,20 +503,27 @@ struct QueueView: View {
                 }
             }
         }
+        .presentationBackground(Palette.raised)
     }
 }
 
 private struct QueueRow: View {
-    let title: String
-    let artist: String?
+    let item: PlayItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).lineLimit(1)
-            if let artist {
-                Text(artist).font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: Spacing.m) {
+            PlayItemArtwork(item: item, size: 40)
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(item.title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                if let artist = item.artist {
+                    Text(artist).font(.subheadline).foregroundStyle(Palette.textSecondary).lineLimit(1)
+                }
             }
         }
+        .padding(.vertical, Spacing.xs)
     }
 }
 

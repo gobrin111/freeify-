@@ -1,61 +1,92 @@
 import SwiftUI
 
-// One song in a list: title, artist or download state, and a play/download icon.
+// A song in a list: the row plays it, and a separate More button opens its actions, so no
+// core action needs a swipe or long press. In Select mode the row is just its content.
+struct TrackListRow<MenuItems: View>: View {
+    let track: Track
+    var isSelecting = false
+    let onPlay: () -> Void
+    @ViewBuilder let menu: MenuItems
+    @EnvironmentObject private var player: LocalPlayer
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if isSelecting {
+                TrackRow(track: track)
+            } else {
+                Button(action: onPlay) {
+                    TrackRow(track: track).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(track.isDownloaded ? "Plays the song" : "Downloads the song")
+                Menu {
+                    menu
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundStyle(Palette.textSecondary)
+                        .frame(width: Spacing.target, height: Spacing.target)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("More for \(track.title)")
+            }
+        }
+        .themedRow(current: player.trackID == track.id)
+        .contextMenu { menu }
+    }
+}
+
+// One song's content: cover, title, artist, and its state.
 struct TrackRow: View {
     let track: Track
     @EnvironmentObject private var player: LocalPlayer
     @EnvironmentObject private var store: LibraryStore
 
     var body: some View {
-        HStack(spacing: 14) {
-            ArtworkView(track: track, size: 44)
-                .overlay {
-                    if player.trackID == track.id {
-                        Image(systemName: "waveform")
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 5))
-                    }
-                }
-            VStack(alignment: .leading, spacing: 4) {
+        let isCurrent = player.trackID == track.id
+        HStack(spacing: Spacing.m) {
+            ArtworkView(track: track, size: Spacing.thumbnail)
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(track.title)
-                    .foregroundStyle(player.trackID == track.id ? Color.mint : .primary)
-                    .lineLimit(2)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                if let artist = track.artist {
+                    Text(artist)
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(1)
+                }
                 if store.downloadingTrackID == track.id {
-                    ProgressView(value: store.downloadProgress ?? 0)
-                    Text(store.downloadProgress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                    StatusChip(
+                        label: store.downloadProgress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…",
+                        systemImage: "arrow.down.circle",
+                        kind: .downloading
+                    )
                 } else if !track.isDownloaded {
-                    Text([track.artist, "Not downloaded"].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(track.artist ?? "Saved in Freeify · Offline")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    StatusChip(label: "Not downloaded", systemImage: "icloud.slash")
                 }
             }
-            Spacer()
+            Spacer(minLength: Spacing.s)
             if track.likedAt != nil {
                 Image(systemName: "heart.fill")
                     .font(.caption)
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(Palette.hair)
                     .accessibilityLabel("Liked")
             }
-            if store.downloadingTrackID != track.id {
-                Image(systemName: track.isDownloaded ? "play.circle" : "arrow.down.circle")
-                    .foregroundStyle(.tint)
+            if isCurrent {
+                PlayingIndicator(isPlaying: player.isPlaying)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, Spacing.m)
+        .frame(minHeight: Spacing.rowMinHeight - 2 * Spacing.m)
     }
 }
 
-// Saved cover art, or a music note when a song has none.
+// Saved cover art, or a themed placeholder when a song has none.
 struct ArtworkView: View {
     let track: Track
     let size: CGFloat
+    var cornerRadius: CGFloat = 8
 
     var body: some View {
         Group {
@@ -64,15 +95,24 @@ struct ArtworkView: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                Image(systemName: "music.note")
-                    .font(.system(size: size * 0.4))
-                    .foregroundStyle(.tint)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.secondary.opacity(0.15))
+                ArtworkPlaceholder(size: size)
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: max(5, size * 0.04)))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .accessibilityHidden(true)
+    }
+}
+
+// Missing art: a music note on a dark panel, never a broken image.
+struct ArtworkPlaceholder: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: "music.note")
+            .font(.system(size: size * 0.38))
+            .foregroundStyle(Palette.textMuted)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Palette.raised)
     }
 }

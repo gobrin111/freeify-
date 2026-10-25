@@ -47,15 +47,16 @@ struct DiscoverView: View {
     var body: some View {
         NavigationStack(path: $store.discoverPath) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: Spacing.xxl) {
                     recentlyPlayedRow
                     madeForYouRow
                     cardRow("Charts", charts)
                     cardRow("New releases", newReleases)
                     moodsGrid
                 }
-                .padding(.vertical)
+                .padding(.vertical, Spacing.l)
             }
+            .background(Palette.canvas)
             .navigationTitle("Discover")
             .navigationDestination(for: DiscoverRoute.self) { route in
                 switch route {
@@ -88,17 +89,24 @@ struct DiscoverView: View {
                                 store.select(track, in: recent, from: PlayContext(name: "Recently played", source: "recent", route: .discover([])),
                                              context: modelContext)
                             } label: {
-                                VStack(alignment: .leading, spacing: 6) {
+                                VStack(alignment: .leading, spacing: Spacing.xs) {
                                     ArtworkView(track: track, size: 120)
-                                    Text(track.title).font(.subheadline).lineLimit(1)
-                                    Text(track.artist ?? " ").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        .overlay(alignment: .bottomTrailing) { NowPlayingBadge(track: track) }
+                                    Text(track.title)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(Palette.textPrimary)
+                                        .lineLimit(1)
+                                    Text(track.artist ?? " ")
+                                        .font(.footnote)
+                                        .foregroundStyle(Palette.textSecondary)
+                                        .lineLimit(1)
                                 }
                                 .frame(width: 120)
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, Spacing.gutter)
                 }
             }
         }
@@ -108,14 +116,14 @@ struct DiscoverView: View {
         DiscoverSection(title: "Made for you") {
             switch madeForYou {
             case .loading:
-                ProgressView().frame(maxWidth: .infinity, minHeight: 120)
+                ProgressView().tint(Palette.activity).frame(maxWidth: .infinity, minHeight: 120)
             case .failed:
                 RowUnavailable()
             case .loaded(let mixes) where mixes.isEmpty:
                 Text("Play, like, or download a few songs from YouTube Music, then pull down to get mixes made for you.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(.horizontal, Spacing.gutter)
             case .loaded(let mixes):
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 14) {
@@ -126,7 +134,7 @@ struct DiscoverView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, Spacing.gutter)
                 }
             }
         }
@@ -136,7 +144,7 @@ struct DiscoverView: View {
         DiscoverSection(title: title) {
             switch state {
             case .loading:
-                ProgressView().frame(maxWidth: .infinity, minHeight: 120)
+                ProgressView().tint(Palette.activity).frame(maxWidth: .infinity, minHeight: 120)
             case .failed:
                 RowUnavailable()
             case .loaded(let cards):
@@ -149,7 +157,7 @@ struct DiscoverView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, Spacing.gutter)
                 }
             }
         }
@@ -159,30 +167,28 @@ struct DiscoverView: View {
         DiscoverSection(title: "Moods & genres") {
             switch moods {
             case .loading:
-                ProgressView().frame(maxWidth: .infinity, minHeight: 120)
+                ProgressView().tint(Palette.activity).frame(maxWidth: .infinity, minHeight: 120)
             case .failed:
                 RowUnavailable()
             case .loaded(let tiles):
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Spacing.s), GridItem(.flexible())], spacing: Spacing.s) {
                     ForEach(tiles) { mood in
                         NavigationLink(value: DiscoverRoute.mood(mood)) {
                             Text(mood.title)
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(Palette.textPrimary)
+                                .lineLimit(2)
                                 .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                                .padding(.horizontal, 12)
-                                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                                .overlay(alignment: .leading) {
-                                    // YouTube Music's stripe color for the tile.
-                                    UnevenRoundedRectangle(topLeadingRadius: 8, bottomLeadingRadius: 8)
-                                        .fill(mood.color.map(Color.init(argb:)) ?? Color.mint)
-                                        .frame(width: 6)
+                                .padding(.horizontal, Spacing.m)
+                                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8).stroke(Palette.borderSubtle)
                                 }
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, Spacing.gutter)
             }
         }
     }
@@ -216,15 +222,29 @@ struct DiscoverView: View {
     }
 }
 
+// A small playing indicator on a card's cover, on an opaque backing.
+private struct NowPlayingBadge: View {
+    let track: Track
+    @EnvironmentObject private var player: LocalPlayer
+
+    var body: some View {
+        if player.trackID == track.id {
+            PlayingIndicator(isPlaying: player.isPlaying)
+                .padding(6)
+                .background(Palette.canvas, in: RoundedRectangle(cornerRadius: 4))
+                .padding(6)
+        }
+    }
+}
+
 struct DiscoverSection<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.title2.bold())
-                .padding(.horizontal)
+        VStack(alignment: .leading, spacing: Spacing.m) {
+            SectionTitle(title: title)
+                .padding(.horizontal, Spacing.gutter)
             content
         }
     }
@@ -232,10 +252,10 @@ struct DiscoverSection<Content: View>: View {
 
 private struct RowUnavailable: View {
     var body: some View {
-        Text("Couldn’t load from YouTube Music. Pull down to try again.")
+        Label("Couldn’t load from YouTube Music. Pull down to retry.", systemImage: "wifi.exclamationmark")
             .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal)
+            .foregroundStyle(Palette.textSecondary)
+            .padding(.horizontal, Spacing.gutter)
     }
 }
 
@@ -245,45 +265,59 @@ struct CardView: View {
     let size: CGFloat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             AsyncImage(url: card.thumbnailURL) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
-                Color.secondary.opacity(0.15)
+                ArtworkPlaceholder(size: size)
             }
             .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            Text(card.title).font(.subheadline).lineLimit(2)
-            Text(card.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityHidden(true)
+            Text(card.title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(2)
+            Text(card.subtitle)
+                .font(.footnote)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(1)
         }
         .frame(width: size, alignment: .leading)
     }
 }
 
-// A "Made for you" mix: the first song's cover with the mix name over it.
+// A "Made for you" mix: a featured armor-cut cover with a labeled badge on an opaque backing.
 private struct MixCard: View {
     let mix: Mix
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             AsyncImage(url: mix.songs.first?.artworkURL ?? mix.songs.first?.thumbnailURL) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
-                Color.mint.opacity(0.3)
+                ArtworkPlaceholder(size: 140)
             }
             .frame(width: 140, height: 140)
+            .clipShape(ArmorPanelShape(cut: 12))
             .overlay(alignment: .bottomLeading) {
                 Text(mix.id == "discover" ? "Discover" : "Mix")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.mint, in: Capsule())
-                    .foregroundStyle(.black)
-                    .padding(8)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Palette.inkOnAccent)
+                    .padding(.horizontal, Spacing.s)
+                    .padding(.vertical, Spacing.xs)
+                    .background(Palette.hair, in: ArmorPanelShape(cut: 6))
+                    .padding(Spacing.s)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            Text(mix.title).font(.subheadline).lineLimit(2)
-            Text(mix.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            .accessibilityHidden(true)
+            Text(mix.title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(2)
+            Text(mix.subtitle)
+                .font(.footnote)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(1)
         }
         .frame(width: 140, alignment: .leading)
     }
@@ -313,6 +347,7 @@ struct MixView: View {
                 }
             )
         }
+        .themedList()
         .navigationTitle(mix.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -350,16 +385,21 @@ struct DownloadAllBanner: View {
 
     var body: some View {
         if let bulk = store.bulkDownload, bulk.name == name {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(bulk.total == 0
-                     ? "Making the “\(name)” playlist…"
-                     : "Downloading \(min(bulk.done + 1, bulk.total)) of \(bulk.total) into the “\(name)” playlist")
-                    .font(.footnote)
+            VStack(alignment: .leading, spacing: Spacing.s) {
+                Label(
+                    bulk.total == 0
+                        ? "Making the “\(name)” playlist…"
+                        : "Downloading \(min(bulk.done + 1, bulk.total)) of \(bulk.total) into the “\(name)” playlist",
+                    systemImage: "arrow.down.circle"
+                )
+                .font(.footnote.weight(.medium).monospacedDigit())
+                .foregroundStyle(Palette.activity)
                 ProgressView(value: Double(bulk.done), total: Double(max(bulk.total, 1)))
+                    .tint(Palette.activity)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-            .background(.regularMaterial)
+            .padding(.horizontal, Spacing.gutter)
+            .padding(.vertical, Spacing.m)
+            .background(Palette.raised)
         }
     }
 }
@@ -399,19 +439,21 @@ private struct RemoteSongsScreen: View {
         Group {
             switch songs {
             case .loading:
-                ProgressView()
+                ProgressView().tint(Palette.activity)
             case .failed:
                 ContentUnavailableView {
                     Label("Couldn’t load songs", systemImage: "wifi.exclamationmark")
                 } description: {
-                    Text("YouTube Music didn’t respond. Check your connection and try again.")
+                    Text("New songs need an internet connection. Your saved songs still play offline.")
                 } actions: {
-                    Button("Try Again") { Task { await reload() } }
+                    Button("Retry") { Task { await reload() } }
+                        .buttonStyle(PrimaryActionStyle())
                 }
             case .loaded(let list):
                 List {
                     RemoteSongRows(songs: list, playContext: context) { radioSeed = $0 }
                 }
+                .themedList()
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { DownloadAllButton(songs: list, name: title) }
                 }
@@ -423,6 +465,8 @@ private struct RemoteSongsScreen: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.canvas)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $radioSeed) { seed in
@@ -446,11 +490,11 @@ struct MoodView: View {
         ScrollView {
             switch playlists {
             case .loading:
-                ProgressView().padding(.top, 40)
+                ProgressView().tint(Palette.activity).padding(.top, 40)
             case .failed:
                 RowUnavailable().padding(.top, 40)
             case .loaded(let cards):
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 18) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Spacing.l)], spacing: Spacing.xl) {
                     ForEach(cards) { card in
                         NavigationLink(value: DiscoverRoute.card(card)) {
                             CardView(card: card, size: 150)
@@ -458,9 +502,10 @@ struct MoodView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding()
+                .padding(Spacing.gutter)
             }
         }
+        .background(Palette.canvas)
         .navigationTitle(mood.title)
         .task {
             if case .loaded = playlists { return }
@@ -469,17 +514,5 @@ struct MoodView: View {
         .refreshable {
             playlists = (try? await YouTubeSource.playlists(for: mood)).map { .loaded($0) } ?? .failed
         }
-    }
-}
-
-extension Color {
-    init(argb: UInt32) {
-        self.init(
-            .sRGB,
-            red: Double((argb >> 16) & 0xFF) / 255,
-            green: Double((argb >> 8) & 0xFF) / 255,
-            blue: Double(argb & 0xFF) / 255,
-            opacity: 1
-        )
     }
 }

@@ -43,24 +43,21 @@ struct LibraryView: View {
         NavigationStack(path: $store.libraryPath) {
             Group {
                 if tracks.isEmpty {
-                    ContentUnavailableView {
-                        Label("Your offline library", systemImage: "music.note.list")
-                    } description: {
-                        Text("Download songs from the Search or Discover tabs, or add songs from Files.")
-                    } actions: {
-                        importButton
-                            .buttonStyle(.borderedProminent)
-                    }
+                    emptyLibrary
                 } else if filteredTracks.isEmpty {
                     ContentUnavailableView {
-                        Label("No matching songs", systemImage: "magnifyingglass")
+                        Label("No matching tracks", systemImage: "magnifyingglass")
                     } description: {
-                        Text("Try another title or artist, or add a song to your Freeify library.")
+                        Text("Try another title or artist.")
+                    } actions: {
+                        Button("Clear Search") { searchText = "" }
+                            .buttonStyle(PrimaryActionStyle())
                     }
                 } else {
                     songList
                 }
             }
+            .background(Palette.canvas)
             .navigationTitle("Library")
             .searchable(
                 text: $searchText,
@@ -88,8 +85,10 @@ struct LibraryView: View {
             .overlay {
                 if isImporting {
                     ProgressView("Importing audio…")
-                        .padding(24)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        .tint(Palette.activity)
+                        .foregroundStyle(Palette.textPrimary)
+                        .padding(Spacing.xl)
+                        .background(Palette.raised, in: ArmorPanelShape(cut: 12))
                 }
             }
             .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.audio]) { result in
@@ -142,60 +141,37 @@ struct LibraryView: View {
                 Section {
                     NavigationLink(value: LibraryRoute.liked) {
                         Label("Liked Songs", systemImage: "heart.fill")
+                            .foregroundStyle(Palette.textPrimary)
                     }
+                    .themedRow()
                     NavigationLink(value: LibraryRoute.playlists) {
                         Label("Playlists", systemImage: "music.note.list")
+                            .foregroundStyle(Palette.textPrimary)
                     }
+                    .themedRow()
                 }
             }
             Section {
                 ForEach(filteredTracks) { track in
-                    Group {
-                        if editMode.isEditing {
-                            TrackRow(track: track)
-                        } else {
-                            Button {
-                                store.select(track, in: filteredTracks, from: PlayContext(name: "Library", source: "library", route: .library([])),
-                                             context: modelContext)
-                            } label: {
-                                TrackRow(track: track)
-                            }
-                        }
+                    TrackListRow(track: track, isSelecting: editMode.isEditing) {
+                        store.select(track, in: filteredTracks,
+                                     from: PlayContext(name: "Library", source: "library", route: .library([])),
+                                     context: modelContext)
+                    } menu: {
+                        trackMenu(track)
                     }
                     .tag(track.id)
-                    .contextMenu {
-                        QueueMenuItems(track: track)
-                        Button {
-                            store.toggleLike(track, in: modelContext)
-                        } label: {
-                            Label(track.likedAt == nil ? "Like" : "Unlike",
-                                  systemImage: track.likedAt == nil ? "heart" : "heart.slash")
-                        }
-                        Button {
-                            tracksToAdd = [track]
-                        } label: {
-                            Label("Add to Playlist", systemImage: "text.badge.plus")
-                        }
-                        if let videoID = track.youtubeID {
-                            Button {
-                                radioSeed = SongResult(id: videoID, title: track.title, artist: track.artist,
-                                                       duration: nil, thumbnailURL: nil, artworkURL: nil)
-                            } label: {
-                                Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
-                            }
-                        }
-                    }
-                    // Swipe buttons are text-only: iOS hides the text of icon-and-text buttons on
-                    // shorter rows, so one-line songs would show only icons.
+                    // Swipes are shortcuts for the More menu. Buttons are text-only: iOS hides
+                    // the text of icon-and-text buttons on shorter rows.
                     .swipeActions(edge: .leading) {
                         Button(track.likedAt == nil ? "Like" : "Unlike") {
                             store.toggleLike(track, in: modelContext)
                         }
-                        .tint(.pink)
+                        .tint(Palette.pressed)
                         Button("Add to Playlist") {
                             tracksToAdd = [track]
                         }
-                        .tint(.indigo)
+                        .tint(Palette.pressed)
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Remove", role: .destructive) {
@@ -205,15 +181,117 @@ struct LibraryView: View {
                             Button("Remove Download") {
                                 store.removeDownload(track, in: modelContext)
                             }
-                            .tint(.orange)
+                            .tint(Palette.pressed)
                         }
                     }
                     .disabled(store.downloadingTrackID == track.id)
                 }
+            } header: {
+                if !editMode.isEditing { sortControl }
             } footer: {
                 Text("\(tracks.count) \(tracks.count == 1 ? "song" : "songs") · \(ByteCountFormatter.string(fromByteCount: storageBytes, countStyle: .file)) on this iPhone")
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(Palette.textMuted)
             }
         }
+        .themedList()
+    }
+
+    // Everything you can do with a library song, for its More button and long-press menu.
+    @ViewBuilder
+    private func trackMenu(_ track: Track) -> some View {
+        QueueMenuItems(track: track)
+        Button {
+            store.toggleLike(track, in: modelContext)
+        } label: {
+            Label(track.likedAt == nil ? "Like" : "Unlike", systemImage: track.likedAt == nil ? "heart" : "heart.slash")
+        }
+        Button {
+            tracksToAdd = [track]
+        } label: {
+            Label("Add to Playlist", systemImage: "text.badge.plus")
+        }
+        if let videoID = track.youtubeID {
+            Button {
+                radioSeed = SongResult(id: videoID, title: track.title, artist: track.artist,
+                                       duration: nil, thumbnailURL: nil, artworkURL: nil)
+            } label: {
+                Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
+            }
+            if track.isDownloaded {
+                Button {
+                    store.removeDownload(track, in: modelContext)
+                } label: {
+                    Label("Remove Download", systemImage: "arrow.down.circle.dotted")
+                }
+            } else {
+                Button {
+                    store.redownload(track, in: modelContext)
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .disabled(store.isDownloading)
+            }
+        }
+        Button(role: .destructive) {
+            tracksToRemove = [track]
+        } label: {
+            Label("Delete from Library", systemImage: "trash")
+        }
+    }
+
+    // A labeled sort control under the search field.
+    private var sortControl: some View {
+        Menu {
+            Picker("Sort by", selection: $sort) {
+                Text("Recently added").tag(LibrarySort.recentlyAdded)
+                Text("Title").tag(LibrarySort.title)
+                Text("Artist").tag(LibrarySort.artist)
+            }
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Text("Sort by")
+                    .foregroundStyle(Palette.textSecondary)
+                Text(sort.label)
+                    .foregroundStyle(Palette.hair)
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(Palette.hair)
+            }
+            .font(.subheadline.weight(.medium))
+            .frame(minHeight: Spacing.target)
+        }
+        .textCase(nil)
+        .accessibilityLabel("Sort by \(sort.label)")
+    }
+
+    // First run: a small original armor-and-slash mark, a plain promise, and the way in.
+    private var emptyLibrary: some View {
+        VStack(spacing: Spacing.l) {
+            ZStack(alignment: .topTrailing) {
+                ArmorPanelShape(cut: 12)
+                    .stroke(Palette.borderControl, lineWidth: 2)
+                    .frame(width: 80, height: 80)
+                HairSlash(height: 40)
+                    .offset(x: 10, y: -14)
+            }
+            .accessibilityHidden(true)
+            Text("Your music, ready offline")
+                .font(.title2.bold())
+                .foregroundStyle(Palette.textPrimary)
+            Text("Find songs on YouTube Music to save them here, or add audio files you already have.")
+                .font(.subheadline)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+            Button("Add music") { store.selectedTab = .search }
+                .buttonStyle(PrimaryActionStyle())
+            Button("Add from Files") { showingImporter = true }
+                .foregroundStyle(Palette.hair)
+                .frame(minHeight: Spacing.target)
+                .disabled(isImporting)
+        }
+        .padding(.horizontal, Spacing.gutter)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ToolbarContentBuilder
@@ -239,7 +317,7 @@ struct LibraryView: View {
             }
         } else {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                importButton
+                addMusicMenu
                 Menu {
                     Button {
                         editMode = .active
@@ -247,25 +325,33 @@ struct LibraryView: View {
                         Label("Select Songs", systemImage: "checkmark.circle")
                     }
                     .disabled(tracks.isEmpty)
-                    Picker("Sort By", selection: $sort) {
-                        Text("Recently Added").tag(LibrarySort.recentlyAdded)
-                        Text("Title").tag(LibrarySort.title)
-                        Text("Artist").tag(LibrarySort.artist)
-                    }
                 } label: {
-                    Label("More", systemImage: "ellipsis.circle")
+                    Label("More", systemImage: "ellipsis")
                 }
             }
         }
     }
 
-    private var importButton: some View {
-        Button {
-            showingImporter = true
+    // Add music: search YouTube Music, or copy in an audio file.
+    private var addMusicMenu: some View {
+        Menu {
+            Button {
+                store.selectedTab = .search
+            } label: {
+                Label("Search YouTube Music", systemImage: "magnifyingglass")
+            }
+            Button {
+                showingImporter = true
+            } label: {
+                Label("Add from Files", systemImage: "folder")
+            }
+            .disabled(isImporting)
         } label: {
-            Label("Add from Files", systemImage: "plus")
+            GlyphView(path: ThemeGlyph.add, size: 22)
+                .foregroundStyle(Palette.textPrimary)
+                .frame(width: Spacing.target, height: Spacing.target)
         }
-        .disabled(isImporting)
+        .accessibilityLabel("Add music")
     }
 
     private func importAudio(_ source: URL) {
@@ -286,4 +372,12 @@ struct LibraryView: View {
 
 enum LibrarySort: String {
     case recentlyAdded, title, artist
+
+    var label: String {
+        switch self {
+        case .recentlyAdded: "Recently added"
+        case .title: "Title"
+        case .artist: "Artist"
+        }
+    }
 }

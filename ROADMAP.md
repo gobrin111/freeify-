@@ -129,11 +129,18 @@ weeks of 5.4 feedback.
 - [ ] Optional: audio "sounds like" similarity (YAMNet or MusiCNN in Core ML, 3–15 MB) comparing candidates with downloaded songs. Candidates need a short streamed clip, which uses data
 - [ ] Optional: genre tags (MusicBrainz lookup, or a model) for genre filter chips in the library and as a ranking feature
 
+## 7. Design (DESIGN.md)
+
+- [ ] 🔨 Dark theme from DESIGN.md tokens: pink for selection and favorites, orange for play and primary actions, cyan for playing and progress, pale green for saved
+- [ ] 🔨 Character motifs: hair slash on section titles, armor-cut corner on primary buttons and mix covers, octagonal play button, armor brackets around Now Playing art
+- [ ] 🔨 Song rows: 48 pt covers, playing marker and indicator, status chips, and a More button on every row
+- [ ] 🔨 Mini player, Now Playing, queue, and Discover restyled; Library is the landing tab; Settings tab with storage and About
+- [ ] Check on the phone: 320/390/430 pt widths, large text, VoiceOver, Reduce Motion
+
 ## Later, on request
 
 - Share with testers without sideloading: TestFlight internal testing or an Ad Hoc build (needs the paid Apple Developer Program)
 - Fix SideStore sign-in (`-80045`) so Freeify refreshes itself every 7 days
-- Visual polish
 
 ## Out of scope
 
