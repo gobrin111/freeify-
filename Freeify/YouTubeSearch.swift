@@ -128,17 +128,28 @@ struct YouTubeSearchView: View {
 // Shared by search, radio, and Discover.
 struct RemoteSongRows: View {
     let songs: [SongResult]
+    // Discover lists play songs in the player, queued from this list; search previews them.
+    var playContext: PlayContext?
     var startRadio: ((SongResult) -> Void)?
     // For recommendations: called with "previewed" or "downloaded", and for "Not interested".
     var onAction: ((SongResult, String) -> Void)?
     var notInterested: ((SongResult) -> Void)?
     @Query private var tracks: [Track]
+    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var store: LibraryStore
 
     var body: some View {
         // Video IDs already in the library, so the same song isn't downloaded twice.
         let libraryIDs = Set(tracks.compactMap { $0.youtubeID })
         ForEach(songs) { song in
-            RemoteSongRow(song: song, inLibrary: libraryIDs.contains(song.id), onAction: onAction)
+            RemoteSongRow(
+                song: song,
+                inLibrary: libraryIDs.contains(song.id),
+                play: playContext.map { context -> () -> Void in
+                    { store.playRemote(song, in: songs, from: context, context: modelContext) }
+                },
+                onAction: onAction
+            )
                 .contextMenu {
                     if let startRadio {
                         Button {
@@ -162,10 +173,15 @@ struct RemoteSongRows: View {
 private struct RemoteSongRow: View {
     let song: SongResult
     let inLibrary: Bool
+    // Set in Discover lists: play in the player instead of previewing.
+    let play: (() -> Void)?
     let onAction: ((SongResult, String) -> Void)?
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var preview: PreviewPlayer
+    @EnvironmentObject private var player: LocalPlayer
+
+    private var isCurrent: Bool { play != nil && player.current?.youtubeID == song.id }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -183,7 +199,7 @@ private struct RemoteSongRow: View {
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(song.title)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isCurrent ? Color.mint : .primary)
                     .lineLimit(2)
                 Text([song.artist, song.duration, inLibrary ? "In library" : nil]
                     .compactMap { $0 }.joined(separator: " · "))
@@ -197,19 +213,39 @@ private struct RemoteSongRow: View {
                 }
             }
             Spacer()
-            Button {
-                if preview.songID != song.id { onAction?(song, "previewed") }
-                store.togglePreview(song)
-            } label: {
-                if preview.songID == song.id && preview.isLoading {
-                    ProgressView()
-                } else {
-                    Image(systemName: preview.songID == song.id ? "stop.circle" : "play.circle")
-                        .font(.title2)
+            if let play {
+                Button {
+                    if isCurrent {
+                        player.togglePlayback()
+                    } else {
+                        onAction?(song, "previewed")
+                        play()
+                    }
+                } label: {
+                    if isCurrent && player.isLoading {
+                        ProgressView()
+                    } else {
+                        Image(systemName: isCurrent && player.isPlaying ? "pause.circle" : "play.circle")
+                            .font(.title2)
+                    }
                 }
+                .frame(width: 32)
+                .accessibilityLabel(isCurrent && player.isPlaying ? "Pause" : "Play")
+            } else {
+                Button {
+                    if preview.songID != song.id { onAction?(song, "previewed") }
+                    store.togglePreview(song)
+                } label: {
+                    if preview.songID == song.id && preview.isLoading {
+                        ProgressView()
+                    } else {
+                        Image(systemName: preview.songID == song.id ? "stop.circle" : "play.circle")
+                            .font(.title2)
+                    }
+                }
+                .frame(width: 32)
+                .accessibilityLabel(preview.songID == song.id ? "Stop preview" : "Preview")
             }
-            .frame(width: 32)
-            .accessibilityLabel(preview.songID == song.id ? "Stop preview" : "Preview")
             if inLibrary {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title2)

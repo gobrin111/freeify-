@@ -1,6 +1,17 @@
 import Foundation
 import SwiftData
 
+enum AppTab {
+    case discover, search, library
+}
+
+// Progress of "Download All" for one Discover list.
+struct BulkDownload {
+    let name: String
+    let total: Int
+    var done = 0
+}
+
 // Song actions shared by every tab.
 @MainActor
 final class LibraryStore: ObservableObject {
@@ -10,9 +21,19 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var downloadingTrackID: UUID?
     @Published private(set) var downloadingSongID: String?
     @Published private(set) var downloadProgress: Double?
+    @Published private(set) var bulkDownload: BulkDownload?
     @Published var errorMessage: String?
+    // Navigation, so the player can open the Discover list a song is playing from.
+    @Published var selectedTab = AppTab.discover
+    @Published var discoverPath: [DiscoverRoute] = []
+    private var cancelBulk = false
 
-    var isDownloading: Bool { downloadingTrackID != nil || downloadingSongID != nil }
+    var isDownloading: Bool { downloadingTrackID != nil || downloadingSongID != nil || bulkDownload != nil }
+
+    func show(_ route: DiscoverRoute) {
+        selectedTab = .discover
+        discoverPath = [route]
+    }
 
     // Record finished plays as listening history.
     func attach(_ context: ModelContext) {
@@ -37,14 +58,72 @@ final class LibraryStore: ObservableObject {
     }
 
     // Play a downloaded track with the rest of its list queued, or download it again.
-    // `source` records where it was played from, for listening history.
-    func select(_ track: Track, in list: [Track], from source: String, context: ModelContext) {
+    func select(_ track: Track, in list: [Track], from playContext: PlayContext, context: ModelContext) {
         if track.isDownloaded {
             preview.stop()
-            player.play(track, in: list.filter { $0.isDownloaded }, from: source)
+            player.play(.track(track), in: list.filter { $0.isDownloaded }.map(PlayItem.track), context: playContext)
         } else {
             redownload(track, in: context)
         }
+    }
+
+    // Play a Discover list from one song, streaming songs that aren't saved.
+    // Saved songs play from their file, so they also work offline.
+    func playRemote(_ song: SongResult, in songs: [SongResult], from playContext: PlayContext, context: ModelContext) {
+        preview.stop()
+        let saved = savedTracks(in: context)
+        let items = songs.map { song in saved[song.id].map(PlayItem.track) ?? .stream(song) }
+        guard let item = items.first(where: { $0.youtubeID == song.id }) else { return }
+        player.play(item, in: items, context: playContext)
+    }
+
+    // Download every song in a Discover list that isn't saved yet, then put the whole list
+    // in a playlist with its name (adding to that playlist if it already exists).
+    func downloadAll(_ songs: [SongResult], named name: String, in context: ModelContext) {
+        guard !isDownloading else { return }
+        let missing = songs.filter { savedTracks(in: context)[$0.id] == nil }
+        bulkDownload = BulkDownload(name: name, total: missing.count)
+        cancelBulk = false
+        Task { @MainActor in
+            var failed = 0
+            for song in missing {
+                if cancelBulk { break }
+                do {
+                    try await downloadSong(song, in: context)
+                } catch {
+                    failed += 1
+                }
+                bulkDownload?.done += 1
+            }
+            let saved = savedTracks(in: context)
+            let tracks = songs.compactMap { saved[$0.id] }
+            if !tracks.isEmpty {
+                let playlists = (try? context.fetch(FetchDescriptor<Playlist>())) ?? []
+                if let playlist = playlists.first(where: { $0.name == name }) {
+                    add(tracks, to: playlist, in: context)
+                } else {
+                    createPlaylist(named: name, with: tracks, in: context)
+                }
+            }
+            bulkDownload = nil
+            if failed > 0 {
+                errorMessage = "\(failed) \(failed == 1 ? "song" : "songs") couldn’t be downloaded. The rest are in the “\(name)” playlist; try Download All again for the missing ones."
+            }
+        }
+    }
+
+    // Stops after the song downloading now finishes.
+    func cancelDownloadAll() {
+        cancelBulk = true
+    }
+
+    // Saved songs from YouTube, by video ID.
+    private func savedTracks(in context: ModelContext) -> [String: Track] {
+        let tracks = (try? context.fetch(FetchDescriptor<Track>())) ?? []
+        return Dictionary(
+            tracks.compactMap { track in track.isDownloaded ? track.youtubeID.map { ($0, track) } : nil },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     // Delete only the audio file; the song stays listed and can be downloaded again.
@@ -130,21 +209,25 @@ final class LibraryStore: ObservableObject {
     // Download a YouTube Music song into the library.
     func download(_ song: SongResult, in context: ModelContext) {
         guard !isDownloading else { return }
-        downloadingSongID = song.id
-        downloadProgress = nil
         Task { @MainActor in
-            defer { downloadingSongID = nil }
             do {
-                let saved = try await YouTubeSource.download(
-                    videoID: song.id, title: song.title, artist: song.artist, artworkURL: song.artworkURL
-                ) { value in
-                    Task { @MainActor in self.downloadProgress = value }
-                }
-                try add(saved, in: context)
+                try await downloadSong(song, in: context)
             } catch {
                 errorMessage = YouTubeSource.describe(error)
             }
         }
+    }
+
+    private func downloadSong(_ song: SongResult, in context: ModelContext) async throws {
+        downloadingSongID = song.id
+        downloadProgress = nil
+        defer { downloadingSongID = nil }
+        let saved = try await YouTubeSource.download(
+            videoID: song.id, title: song.title, artist: song.artist, artworkURL: song.artworkURL
+        ) { value in
+            Task { @MainActor in self.downloadProgress = value }
+        }
+        try add(saved, in: context)
     }
 
     func redownload(_ track: Track, in context: ModelContext) {

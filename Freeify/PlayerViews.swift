@@ -1,24 +1,30 @@
+import SwiftData
 import SwiftUI
 
-// Compact controls pinned to the bottom of every library screen. Tap to open the full player.
+// Compact controls pinned to the bottom of every tab. Tap to open the full player.
 struct PlayerBar: View {
     @EnvironmentObject private var player: LocalPlayer
     @State private var showingPlayer = false
 
     var body: some View {
-        if let track = player.current {
+        if let item = player.current {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    ArtworkView(track: track, size: 44)
+                    PlayItemArtwork(item: item, size: 44)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(player.title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                        Text(player.artist ?? "Saved in Freeify").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        Text(player.artist ?? (item.track == nil ? "Streaming" : "Saved in Freeify"))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
                     Button {
                         player.togglePlayback()
                     } label: {
-                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.title2)
+                        if player.isLoading && player.isPlaying {
+                            ProgressView()
+                        } else {
+                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.title2)
+                        }
                     }
                     .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
                     Button {
@@ -48,12 +54,36 @@ struct PlayerBar: View {
     }
 }
 
-// Full-screen player: artwork, like, seek bar, controls, and the queue.
+// Cover art for what's playing: a saved song's art, or a streamed song's (shown, not saved).
+struct PlayItemArtwork: View {
+    let item: PlayItem
+    let size: CGFloat
+
+    var body: some View {
+        switch item {
+        case .track(let track):
+            ArtworkView(track: track, size: size)
+        case .stream(let song):
+            AsyncImage(url: size > 60 ? song.artworkURL ?? song.thumbnailURL : song.thumbnailURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.secondary.opacity(0.15)
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: max(5, size * 0.04)))
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+// Full-screen player: where it's playing from, artwork, like or download, seek bar,
+// controls, and the queue.
 struct NowPlayingView: View {
     @EnvironmentObject private var player: LocalPlayer
     @EnvironmentObject private var store: LibraryStore
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query private var tracks: [Track]
     @State private var showingQueue = false
 
     var body: some View {
@@ -62,24 +92,21 @@ struct NowPlayingView: View {
                 .fill(.secondary)
                 .frame(width: 40, height: 5)
                 .padding(.top, 8)
+            if let context = player.context {
+                playingFrom(context)
+            }
             Spacer(minLength: 0)
-            if let track = player.current {
-                ArtworkView(track: track, size: 300)
+            if let item = player.current {
+                PlayItemArtwork(item: item, size: 300)
                     .shadow(radius: 12, y: 6)
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(player.title).font(.title2.bold()).lineLimit(2)
-                        Text(player.artist ?? "Saved in Freeify").font(.title3).foregroundStyle(.secondary).lineLimit(1)
+                        Text(player.artist ?? (item.track == nil ? "Streaming" : "Saved in Freeify"))
+                            .font(.title3).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
-                    Button {
-                        store.toggleLike(track, in: modelContext)
-                    } label: {
-                        Image(systemName: track.likedAt == nil ? "heart" : "heart.fill")
-                            .font(.title2)
-                            .foregroundStyle(track.likedAt == nil ? Color.secondary : Color.pink)
-                    }
-                    .accessibilityLabel(track.likedAt == nil ? "Like" : "Unlike")
+                    likeOrDownload(item)
                 }
             }
             PlaybackPosition()
@@ -97,11 +124,70 @@ struct NowPlayingView: View {
         }
         .padding(.horizontal, 28)
         .padding(.bottom)
-        .onChange(of: player.trackID) { _, trackID in
-            if trackID == nil { dismiss() }
+        .onChange(of: player.current?.id) { _, id in
+            if id == nil { dismiss() }
         }
         .sheet(isPresented: $showingQueue) {
             QueueView()
+        }
+    }
+
+    // "Playing from" a list; Discover lists open again when tapped.
+    private func playingFrom(_ context: PlayContext) -> some View {
+        Button {
+            guard let route = context.route else { return }
+            dismiss()
+            store.show(route)
+        } label: {
+            VStack(spacing: 2) {
+                Text("PLAYING FROM")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(context.name).lineLimit(1)
+                    if context.route != nil {
+                        Image(systemName: "chevron.right").font(.caption)
+                    }
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            }
+        }
+        .disabled(context.route == nil)
+        .accessibilityHint(context.route == nil ? "" : "Opens this list in Discover")
+    }
+
+    // Saved songs can be liked; streamed songs can be downloaded.
+    @ViewBuilder
+    private func likeOrDownload(_ item: PlayItem) -> some View {
+        switch item {
+        case .track(let track):
+            Button {
+                store.toggleLike(track, in: modelContext)
+            } label: {
+                Image(systemName: track.likedAt == nil ? "heart" : "heart.fill")
+                    .font(.title2)
+                    .foregroundStyle(track.likedAt == nil ? Color.secondary : Color.pink)
+            }
+            .accessibilityLabel(track.likedAt == nil ? "Like" : "Unlike")
+        case .stream(let song):
+            if tracks.contains(where: { $0.youtubeID == song.id }) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("In library")
+            } else if store.downloadingSongID == song.id {
+                ProgressView(value: store.downloadProgress ?? 0)
+                    .frame(width: 44)
+            } else {
+                Button {
+                    store.download(song, in: modelContext)
+                } label: {
+                    Image(systemName: "arrow.down.circle").font(.title2)
+                }
+                .disabled(store.isDownloading)
+                .accessibilityLabel("Download")
+            }
         }
     }
 }
@@ -225,8 +311,8 @@ struct QueueView: View {
                 if !player.upNext.isEmpty {
                     Section("Next in Queue") {
                         // The same song can be queued twice, so rows are keyed by position.
-                        ForEach(Array(player.upNext.enumerated()), id: \.offset) { _, track in
-                            QueueRow(title: track.title, artist: track.artist)
+                        ForEach(Array(player.upNext.enumerated()), id: \.offset) { _, item in
+                            QueueRow(title: item.title, artist: item.artist)
                         }
                         .onMove { player.moveUpNext(from: $0, to: $1) }
                         .onDelete { player.removeUpNext(at: $0) }
@@ -235,8 +321,8 @@ struct QueueView: View {
                 let upcoming = player.upcoming
                 if !upcoming.isEmpty {
                     Section("Next Up") {
-                        ForEach(upcoming) { track in
-                            QueueRow(title: track.title, artist: track.artist)
+                        ForEach(upcoming) { item in
+                            QueueRow(title: item.title, artist: item.artist)
                         }
                         .onMove { player.moveUpcoming(from: $0, to: $1) }
                         .onDelete { player.removeUpcoming(at: $0) }

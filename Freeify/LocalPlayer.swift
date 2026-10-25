@@ -1,10 +1,62 @@
-import AVFAudio
+import AVFoundation
 import Combine
 import Foundation
 import MediaPlayer
+import UIKit
 
 enum RepeatMode: String {
     case off, all, one
+}
+
+// Something the player can play: a saved song, or a YouTube Music song streamed without saving.
+enum PlayItem: Identifiable {
+    case track(Track)
+    case stream(SongResult)
+
+    var id: String {
+        switch self {
+        case .track(let track): track.id.uuidString
+        case .stream(let song): "stream-\(song.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .track(let track): track.title
+        case .stream(let song): song.title
+        }
+    }
+
+    var artist: String? {
+        switch self {
+        case .track(let track): track.artist
+        case .stream(let song): song.artist
+        }
+    }
+
+    var youtubeID: String? {
+        switch self {
+        case .track(let track): track.youtubeID
+        case .stream(let song): song.id
+        }
+    }
+
+    var track: Track? {
+        if case .track(let track) = self { return track }
+        return nil
+    }
+
+    // Saved songs whose download was removed are skipped.
+    var isPlayable: Bool { track?.isDownloaded ?? true }
+}
+
+// Where playback started, shown as "Playing from …" in the full-screen player.
+struct PlayContext {
+    let name: String
+    // For listening history: library, liked, playlist, recent, mix, discover, or radio.
+    let source: String
+    // Set for Discover lists, so the player can open the list again.
+    var route: DiscoverRoute?
 }
 
 // One play of a song, recorded as listening history when it ends.
@@ -14,7 +66,7 @@ struct Listen {
     let title: String
     let artist: String?
     let duration: TimeInterval
-    // Where it was played from: library, liked, playlist, recent, or queue.
+    // Where it was played from: library, liked, playlist, recent, mix, discover, radio, or queue.
     let source: String
     let startedAt = Date()
     var seconds: TimeInterval = 0
@@ -31,11 +83,15 @@ private enum Saved {
 
 @MainActor
 final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    @Published private(set) var current: PlayItem?
+    // The current saved song, for marking it in library lists.
     @Published private(set) var trackID: UUID?
-    @Published private(set) var current: Track?
+    @Published private(set) var context: PlayContext?
     @Published private(set) var title = ""
     @Published private(set) var artist: String?
     @Published private(set) var isPlaying = false
+    // A streamed song is still buffering.
+    @Published private(set) var isLoading = false
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var shuffle = false
@@ -44,17 +100,22 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var errorMessage: String?
 
     // Songs added with "Play next" or "Add to queue". They play before the rest of the list.
-    @Published private(set) var upNext: [Track] = []
+    @Published private(set) var upNext: [PlayItem] = []
     // The list playback started from, and the order it plays in (shuffled or not).
-    @Published private(set) var queue: [Track] = []
+    @Published private(set) var queue: [PlayItem] = []
     @Published private(set) var position = 0
-    private var source: [Track] = []
+    private var source: [PlayItem] = []
     private var playingFromUpNext = false
     private var nowPlayingArtwork: MPMediaItemArtwork?
     var onListen: ((Listen) -> Void)?
     private var listen: Listen?
-    private var playSource = "library"
+    // Saved songs play from their file; streamed songs use AVPlayer.
     private var audio: AVAudioPlayer?
+    private var stream: AVPlayer?
+    private var streamStatus: NSKeyValueObservation?
+    private var streamEnd: NSObjectProtocol?
+    // Bumped whenever a new song opens, so late stream callbacks for an old song are ignored.
+    private var openGeneration = 0
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var commands: [(MPRemoteCommand, Any)] = []
@@ -89,21 +150,22 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     deinit {
         timer?.invalidate()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
+        if let streamEnd { NotificationCenter.default.removeObserver(streamEnd) }
         commands.forEach { $0.0.removeTarget($0.1) }
     }
 
-    // Play a track, queueing the rest of the list it was picked from.
-    func play(_ track: Track, in list: [Track], from source: String) {
-        if trackID == track.id {
+    // Play an item, queueing the rest of the list it was picked from.
+    func play(_ item: PlayItem, in list: [PlayItem], context: PlayContext) {
+        if current?.id == item.id {
             play()
             return
         }
-        playSource = source
-        self.source = list
-        queue = shuffle ? [track] + list.filter { $0.id != track.id }.shuffled() : list
-        position = queue.firstIndex { $0.id == track.id } ?? 0
+        self.context = context
+        source = list
+        queue = shuffle ? [item] + list.filter { $0.id != item.id }.shuffled() : list
+        position = queue.firstIndex { $0.id == item.id } ?? 0
         playingFromUpNext = false
-        if open(track) { play() }
+        if open(item) { play() }
     }
 
     var savedTrackID: UUID? {
@@ -112,11 +174,13 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // Load the last song paused at its saved position, without starting playback.
     func restore(_ track: Track, in list: [Track]) {
-        guard audio == nil else { return }
-        source = list
-        queue = shuffle ? [track] + list.filter { $0.id != track.id }.shuffled() : list
-        position = queue.firstIndex { $0.id == track.id } ?? 0
-        guard open(track), let audio else { return }
+        guard current == nil else { return }
+        let items = list.map(PlayItem.track)
+        context = PlayContext(name: "Library", source: "library")
+        source = items
+        queue = shuffle ? [.track(track)] + items.filter { $0.id != track.id.uuidString }.shuffled() : items
+        position = queue.firstIndex { $0.id == track.id.uuidString } ?? 0
+        guard open(.track(track)), let audio else { return }
         audio.currentTime = min(UserDefaults.standard.double(forKey: Saved.time), audio.duration)
         elapsed = audio.currentTime
         updateNowPlaying()
@@ -133,7 +197,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // Restart the song when more than a few seconds in, like Spotify; otherwise go back one.
     // From a queued song, go back to the list song that played before it.
     func previous() {
-        if (audio?.currentTime ?? 0) <= 3 {
+        if currentTime <= 3 {
             if playingFromUpNext && queue.indices.contains(position) {
                 move(to: position)
                 return
@@ -149,26 +213,26 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // Nothing playing yet: start the song on its own instead of queueing it.
     func playNext(_ track: Track) {
         guard track.isDownloaded else { return }
-        if audio == nil {
-            play(track, in: [track], from: "queue")
+        if current == nil {
+            play(.track(track), in: [.track(track)], context: PlayContext(name: "Queue", source: "queue"))
         } else {
-            upNext.insert(track, at: 0)
+            upNext.insert(.track(track), at: 0)
             updateNowPlaying()
         }
     }
 
     func addToQueue(_ track: Track) {
         guard track.isDownloaded else { return }
-        if audio == nil {
-            play(track, in: [track], from: "queue")
+        if current == nil {
+            play(.track(track), in: [.track(track)], context: PlayContext(name: "Queue", source: "queue"))
         } else {
-            upNext.append(track)
+            upNext.append(.track(track))
             updateNowPlaying()
         }
     }
 
     // The list songs still to come, after the current one.
-    var upcoming: [Track] {
+    var upcoming: [PlayItem] {
         guard position + 1 < queue.count else { return [] }
         return Array(queue[(position + 1)...])
     }
@@ -226,29 +290,31 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             stop()
             return
         }
-        if let index = queue.firstIndex(where: { $0.id == track.id }), index < position {
+        let id = track.id.uuidString
+        if let index = queue.firstIndex(where: { $0.id == id }), index < position {
             position -= 1
         }
-        queue.removeAll { $0.id == track.id }
-        source.removeAll { $0.id == track.id }
-        upNext.removeAll { $0.id == track.id }
+        queue.removeAll { $0.id == id }
+        source.removeAll { $0.id == id }
+        upNext.removeAll { $0.id == id }
         updateNowPlaying()
     }
 
     private func playUpNext() {
-        let track = upNext.removeFirst()
+        let item = upNext.removeFirst()
         playingFromUpNext = true
-        if open(track) { play() }
+        if open(item) { play() }
     }
 
-    private func beginListen(_ track: Track) {
+    private func beginListen(_ item: PlayItem) {
         listen = Listen(
-            trackID: track.id,
-            youtubeID: track.youtubeID,
-            title: track.title,
-            artist: track.artist,
+            // Streamed songs aren't in the library, so they get an ID of their own.
+            trackID: item.track?.id ?? UUID(),
+            youtubeID: item.youtubeID,
+            title: item.title,
+            artist: item.artist,
             duration: duration,
-            source: playingFromUpNext ? "queue" : playSource
+            source: playingFromUpNext ? "queue" : context?.source ?? "library"
         )
     }
 
@@ -260,7 +326,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if finished || listen.seconds >= 5 { onListen?(listen) }
     }
 
-    // The next downloaded track in the given direction, wrapping only with repeat all.
+    // The next playable item in the given direction, wrapping only with repeat all.
     private func neighbor(_ step: Int) -> Int? {
         guard !queue.isEmpty else { return nil }
         var index = position
@@ -270,13 +336,13 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 guard repeatMode == .all else { return nil }
                 index = step > 0 ? 0 : queue.count - 1
             }
-            // With repeat all, a lone downloaded song loops back to itself.
-            if (index != position || repeatMode == .all) && queue[index].isDownloaded { return index }
+            // With repeat all, a lone song loops back to itself.
+            if (index != position || repeatMode == .all) && queue[index].isPlayable { return index }
         }
         return nil
     }
 
-    // Switch tracks without pausing first: deactivating the audio session between songs
+    // Switch songs without pausing first: deactivating the audio session between songs
     // can let iOS suspend Freeify while the screen is locked.
     private func move(to index: Int) {
         position = index
@@ -284,45 +350,138 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if open(queue[index]) { play() }
     }
 
-    private func open(_ track: Track) -> Bool {
+    private func open(_ item: PlayItem) -> Bool {
         endListen(finished: false)
-        do {
-            let next = try AVAudioPlayer(contentsOf: track.fileURL)
-            audio?.stop()
-            audio = next
-            next.delegate = self
-            trackID = track.id
-            current = track
+        openGeneration += 1
+        audio?.stop()
+        audio = nil
+        unloadStream()
+        current = item
+        trackID = item.track?.id
+        title = item.title
+        artist = item.artist
+        elapsed = 0
+        duration = 0
+        isPlaying = false
+        nowPlayingArtwork = nil
+
+        switch item {
+        case .track(let track):
+            do {
+                let player = try AVAudioPlayer(contentsOf: track.fileURL)
+                player.delegate = self
+                audio = player
+                duration = player.duration
+            } catch {
+                current = nil
+                trackID = nil
+                errorMessage = error.localizedDescription
+                updateNowPlaying()
+                return false
+            }
             UserDefaults.standard.set(track.id.uuidString, forKey: Saved.trackID)
             UserDefaults.standard.set(0.0, forKey: Saved.time)
             nowPlayingArtwork = Artwork.image(for: track).map { image in
                 MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             }
-            title = track.title
-            artist = track.artist
-            duration = next.duration
-            elapsed = 0
-            isPlaying = false
-            beginListen(track)
-            return true
-        } catch {
-            errorMessage = error.localizedDescription
-            return false
+        case .stream(let song):
+            // Streams can't be reopened offline, so they aren't remembered across launches.
+            UserDefaults.standard.removeObject(forKey: Saved.trackID)
+            duration = Self.seconds(from: song.duration)
+            isLoading = true
+            loadStream(song, generation: openGeneration)
+        }
+        beginListen(item)
+        return true
+    }
+
+    // Resolve the stream link, then start playback if play was pressed meanwhile.
+    private func loadStream(_ song: SongResult, generation: Int) {
+        Task { @MainActor in
+            if let url = song.artworkURL ?? song.thumbnailURL,
+               let result = try? await URLSession.shared.data(from: url),
+               let image = UIImage(data: result.0),
+               generation == openGeneration {
+                nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                updateNowPlaying()
+            }
+        }
+        Task { @MainActor in
+            do {
+                let asset = try await YouTubeSource.previewAsset(videoID: song.id)
+                guard generation == openGeneration else { return }
+                let item = AVPlayerItem(asset: asset)
+                let player = AVPlayer(playerItem: item)
+                stream = player
+                streamStatus = item.observe(\.status) { [weak self] item, _ in
+                    let status = item.status
+                    let seconds = item.duration.seconds
+                    let details = item.error?.localizedDescription
+                    Task { @MainActor [weak self] in
+                        guard let self, generation == self.openGeneration else { return }
+                        if status == .readyToPlay {
+                            self.isLoading = false
+                            if seconds.isFinite && seconds > 0 { self.duration = seconds }
+                            self.updateNowPlaying()
+                        } else if status == .failed {
+                            self.streamFailed(details ?? "unknown")
+                        }
+                    }
+                }
+                streamEnd = NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, generation == self.openGeneration else { return }
+                        self.finished(successfully: true)
+                    }
+                }
+                if isPlaying { player.play() }
+            } catch {
+                guard generation == openGeneration else { return }
+                streamFailed(YouTubeSource.describe(error))
+            }
         }
     }
 
+    private func streamFailed(_ details: String) {
+        isLoading = false
+        pause()
+        errorMessage = "Couldn’t stream “\(title)”. Check your connection, or try another song.\n\nDetails: \(details)"
+    }
+
+    private func unloadStream() {
+        stream?.pause()
+        stream = nil
+        streamStatus = nil
+        if let streamEnd { NotificationCenter.default.removeObserver(streamEnd) }
+        streamEnd = nil
+        isLoading = false
+    }
+
+    private var currentTime: TimeInterval {
+        if let audio { return audio.currentTime }
+        let seconds = stream?.currentTime().seconds ?? 0
+        return seconds.isFinite ? seconds : 0
+    }
+
     func play() {
-        guard let audio else { return }
+        guard current != nil else { return }
         if listen == nil, let current { beginListen(current) }
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
-            if audio.currentTime >= audio.duration { audio.currentTime = 0 }
-            guard audio.play() else {
-                throw NSError(domain: "Freeify", code: 1, userInfo: [
-                    NSLocalizedDescriptionKey: "This audio file couldn’t start playing."
-                ])
+            if let audio {
+                if audio.currentTime >= audio.duration { audio.currentTime = 0 }
+                guard audio.play() else {
+                    throw NSError(domain: "Freeify", code: 1, userInfo: [
+                        NSLocalizedDescriptionKey: "This audio file couldn’t start playing."
+                    ])
+                }
+            } else {
+                // A stream still loading starts as soon as it's ready.
+                stream?.play()
             }
             isPlaying = true
             errorMessage = nil
@@ -339,26 +498,30 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func pause() {
         resumeAfterInterruption = false
         audio?.pause()
+        stream?.pause()
         isPlaying = false
-        elapsed = audio?.currentTime ?? elapsed
-        UserDefaults.standard.set(elapsed, forKey: Saved.time)
+        elapsed = currentTime
+        if trackID != nil { UserDefaults.standard.set(elapsed, forKey: Saved.time) }
         timer?.invalidate()
         updateNowPlaying()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    // Unload the current track, e.g. when it is removed from the library.
+    // Unload the current song, e.g. when it is removed from the library.
     func stop() {
         endListen(finished: false)
         pause()
+        openGeneration += 1
         audio = nil
+        unloadStream()
         source = []
         queue = []
         upNext = []
         position = 0
         playingFromUpNext = false
-        trackID = nil
         current = nil
+        trackID = nil
+        context = nil
         nowPlayingArtwork = nil
         UserDefaults.standard.removeObject(forKey: Saved.trackID)
         title = ""
@@ -374,9 +537,15 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func seek(to time: TimeInterval) {
-        guard let audio else { return }
-        audio.currentTime = min(max(time, 0), duration)
-        elapsed = audio.currentTime
+        let target = min(max(time, 0), duration)
+        if let audio {
+            audio.currentTime = target
+        } else if let stream {
+            stream.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        } else {
+            return
+        }
+        elapsed = target
         updateNowPlaying()
     }
 
@@ -385,28 +554,29 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.elapsed = self.audio?.currentTime ?? 0
-                if self.isPlaying { self.listen?.seconds += 0.5 }
-                UserDefaults.standard.set(self.elapsed, forKey: Saved.time)
+                self.elapsed = self.currentTime
+                if self.isPlaying && !self.isLoading { self.listen?.seconds += 0.5 }
+                if self.trackID != nil { UserDefaults.standard.set(self.elapsed, forKey: Saved.time) }
             }
         }
     }
 
     private func updateNowPlaying() {
-        hasNext = audio != nil && (!upNext.isEmpty || neighbor(1) != nil)
+        let loaded = current != nil
+        hasNext = loaded && (!upNext.isEmpty || neighbor(1) != nil)
         let center = MPRemoteCommandCenter.shared()
         center.nextTrackCommand.isEnabled = hasNext
-        center.previousTrackCommand.isEnabled = audio != nil
-        center.playCommand.isEnabled = audio != nil
-        center.pauseCommand.isEnabled = audio != nil
-        center.togglePlayPauseCommand.isEnabled = audio != nil
-        center.changePlaybackPositionCommand.isEnabled = audio != nil
-        guard audio != nil else { return }
+        center.previousTrackCommand.isEnabled = loaded
+        center.playCommand.isEnabled = loaded
+        center.pauseCommand.isEnabled = loaded
+        center.togglePlayPauseCommand.isEnabled = loaded
+        center.changePlaybackPositionCommand.isEnabled = loaded
+        guard loaded else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: artist ?? "",
             MPMediaItemPropertyPlaybackDuration: duration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: audio?.currentTime ?? 0,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
         ]
@@ -452,6 +622,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         case .began:
             resumeAfterInterruption = isPlaying
             audio?.pause()
+            stream?.pause()
             isPlaying = false
             timer?.invalidate()
             updateNowPlaying()
@@ -465,28 +636,39 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
+    // A song reached its end: repeat it, or move to the next one.
+    private func finished(successfully: Bool) {
+        if !successfully {
+            pause()
+            errorMessage = "Playback ended unexpectedly."
+        } else if repeatMode == .one {
+            endListen(finished: true)
+            if let current { beginListen(current) }
+            seek(to: 0)
+            play()
+        } else if !upNext.isEmpty {
+            endListen(finished: true)
+            playUpNext()
+        } else if let index = neighbor(1) {
+            endListen(finished: true)
+            move(to: index)
+        } else {
+            endListen(finished: true)
+            pause()
+            seek(to: 0)
+        }
+    }
+
+    // "3:24" or "1:02:03" to seconds; 0 when unknown.
+    private static func seconds(from text: String?) -> TimeInterval {
+        guard let text else { return 0 }
+        return text.split(separator: ":").reduce(0) { total, part in total * 60 + (Double(part) ?? 0) }
+    }
+
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor [weak self] in
             guard let self, self.audio === player else { return }
-            if !flag {
-                self.pause()
-                self.errorMessage = "Playback ended unexpectedly."
-            } else if self.repeatMode == .one {
-                self.endListen(finished: true)
-                if let current = self.current { self.beginListen(current) }
-                self.seek(to: 0)
-                self.play()
-            } else if !self.upNext.isEmpty {
-                self.endListen(finished: true)
-                self.playUpNext()
-            } else if let index = self.neighbor(1) {
-                self.endListen(finished: true)
-                self.move(to: index)
-            } else {
-                self.endListen(finished: true)
-                self.pause()
-                self.seek(to: 0)
-            }
+            self.finished(successfully: flag)
         }
     }
 

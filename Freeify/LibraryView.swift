@@ -152,7 +152,8 @@ struct LibraryView: View {
                             TrackRow(track: track)
                         } else {
                             Button {
-                                store.select(track, in: filteredTracks, from: "library", context: modelContext)
+                                store.select(track, in: filteredTracks, from: PlayContext(name: "Library", source: "library"),
+                                             context: modelContext)
                             } label: {
                                 TrackRow(track: track)
                             }

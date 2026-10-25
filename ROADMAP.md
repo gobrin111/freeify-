@@ -109,6 +109,12 @@ page change breaks only that row. History and feedback never leave the phone.
 - [ ] 🔨 Rows: "Mix from *song*" for three seeds and "Discover Mix" (artists you don't have yet), refreshed daily or by pulling down, and saved for offline viewing
 - [ ] 🔨 Feedback: record whether each recommendation was shown, previewed, downloaded, liked, or dismissed with "Not interested"
 
+### 5.5 Playing Discover lists
+
+- [ ] 🔨 Play buttons in mixes, charts, playlists, albums, and radios play in the player (bottom bar, lock screen, next/previous) with the list queued; songs not saved are streamed, saved songs play from their file. Search keeps previews
+- [ ] 🔨 "Playing from …" in the full-screen player; tapping it opens that Discover list again
+- [ ] 🔨 Download All on those lists: saves every missing song, then puts the list in a playlist with its name (or adds to that playlist if it exists), with progress and Cancel
+
 **Done when:** Discover shows personal mixes that change with what you play, and
 feedback is being recorded for milestone 6.
 

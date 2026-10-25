@@ -10,7 +10,10 @@ Freeify has three tabs, with the player bar above them.
 
 - **Discover:** recently played songs, "Made for you" mixes built from what you
   play, like, and save, plus YouTube Music charts, new releases, and moods &
-  genres. Listening history and recommendation feedback stay on the phone.
+  genres. Play buttons in those lists play in the player, streaming songs that
+  aren't saved, and the full-screen player's "Playing from" opens the list again.
+  **Download All** saves a list's songs into a playlist with its name. Listening
+  history and recommendation feedback stay on the phone.
 - **Search:** YouTube Music's Songs tab, with cover art and more results as you
   scroll. Play streams a preview without saving; download saves the song with its
   cover art using [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned to a

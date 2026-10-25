@@ -19,16 +19,19 @@ struct RootView: View {
     @StateObject private var store = LibraryStore()
 
     var body: some View {
-        TabView {
+        TabView(selection: $store.selectedTab) {
             DiscoverView()
                 .withPlayerBar()
                 .tabItem { Label("Discover", systemImage: "sparkles") }
+                .tag(AppTab.discover)
             YouTubeSearchView()
                 .withPlayerBar()
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
+                .tag(AppTab.search)
             LibraryView()
                 .withPlayerBar()
                 .tabItem { Label("Library", systemImage: "music.note.list") }
+                .tag(AppTab.library)
         }
         .alert("Something went wrong", isPresented: Binding(
             get: { store.errorMessage != nil },

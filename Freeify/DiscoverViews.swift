@@ -1,6 +1,14 @@
 import SwiftData
 import SwiftUI
 
+// A page inside the Discover tab. The player uses these to reopen the list a song plays from.
+enum DiscoverRoute: Hashable {
+    case card(BrowseCard)
+    case mood(MoodTile)
+    case mix(Mix)
+    case radio(SongResult)
+}
+
 // A Discover row's content, loaded separately so one failing page doesn't affect the others.
 enum Loadable<Value> {
     case loading, loaded(Value), failed
@@ -35,7 +43,7 @@ struct DiscoverView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $store.discoverPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     recentlyPlayedRow
@@ -47,14 +55,13 @@ struct DiscoverView: View {
                 .padding(.vertical)
             }
             .navigationTitle("Discover")
-            .navigationDestination(for: BrowseCard.self) { card in
-                CardSongsView(card: card)
-            }
-            .navigationDestination(for: MoodTile.self) { mood in
-                MoodView(mood: mood)
-            }
-            .navigationDestination(for: Mix.self) { mix in
-                MixView(mix: mix)
+            .navigationDestination(for: DiscoverRoute.self) { route in
+                switch route {
+                case .card(let card): CardSongsView(card: card)
+                case .mood(let mood): MoodView(mood: mood)
+                case .mix(let mix): MixView(mix: mix)
+                case .radio(let seed): RadioView(seed: seed)
+                }
             }
             .task { await load(refreshMixes: false) }
             .refreshable { await load(refreshMixes: true) }
@@ -70,7 +77,8 @@ struct DiscoverView: View {
                     LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(recent) { track in
                             Button {
-                                store.select(track, in: recent, from: "recent", context: modelContext)
+                                store.select(track, in: recent, from: PlayContext(name: "Recently played", source: "recent"),
+                                             context: modelContext)
                             } label: {
                                 VStack(alignment: .leading, spacing: 6) {
                                     ArtworkView(track: track, size: 120)
@@ -104,7 +112,7 @@ struct DiscoverView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(mixes) { mix in
-                            NavigationLink(value: mix) {
+                            NavigationLink(value: DiscoverRoute.mix(mix)) {
                                 MixCard(mix: mix)
                             }
                             .buttonStyle(.plain)
@@ -127,7 +135,7 @@ struct DiscoverView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(cards) { card in
-                            NavigationLink(value: card) {
+                            NavigationLink(value: DiscoverRoute.card(card)) {
                                 CardView(card: card, size: 140)
                             }
                             .buttonStyle(.plain)
@@ -149,7 +157,7 @@ struct DiscoverView: View {
             case .loaded(let tiles):
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(tiles) { mood in
-                        NavigationLink(value: mood) {
+                        NavigationLink(value: DiscoverRoute.mood(mood)) {
                             Text(mood.title)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
@@ -264,10 +272,13 @@ struct MixView: View {
     @State private var hidden = Set<String>()
     @State private var radioSeed: SongResult?
 
+    private var songs: [SongResult] { mix.songs.filter { !hidden.contains($0.id) } }
+
     var body: some View {
         List {
             RemoteSongRows(
-                songs: mix.songs.filter { !hidden.contains($0.id) },
+                songs: songs,
+                playContext: PlayContext(name: mix.title, source: "mix", route: .mix(mix)),
                 startRadio: { radioSeed = $0 },
                 onAction: { song, action in
                     MadeForYou.record(action, song: song, in: mix, context: modelContext)
@@ -280,8 +291,51 @@ struct MixView: View {
         }
         .navigationTitle(mix.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { DownloadAllButton(songs: songs, name: mix.title) }
+        }
+        .safeAreaInset(edge: .top) { DownloadAllBanner(name: mix.title) }
         .navigationDestination(item: $radioSeed) { seed in
             RadioView(seed: seed)
+        }
+    }
+}
+
+// "Download All" for a Discover list: saves every song and makes a playlist named after the list.
+struct DownloadAllButton: View {
+    let songs: [SongResult]
+    let name: String
+    @EnvironmentObject private var store: LibraryStore
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        if store.bulkDownload?.name == name {
+            Button("Cancel") { store.cancelDownloadAll() }
+        } else {
+            Button("Download All") {
+                store.downloadAll(songs, named: name, in: modelContext)
+            }
+            .disabled(store.isDownloading || songs.isEmpty)
+        }
+    }
+}
+
+struct DownloadAllBanner: View {
+    let name: String
+    @EnvironmentObject private var store: LibraryStore
+
+    var body: some View {
+        if let bulk = store.bulkDownload, bulk.name == name {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(bulk.total == 0
+                     ? "Making the “\(name)” playlist…"
+                     : "Downloading \(min(bulk.done + 1, bulk.total)) of \(bulk.total) into the “\(name)” playlist")
+                    .font(.footnote)
+                ProgressView(value: Double(bulk.done), total: Double(max(bulk.total, 1)))
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(.regularMaterial)
         }
     }
 }
@@ -291,7 +345,7 @@ struct CardSongsView: View {
     let card: BrowseCard
 
     var body: some View {
-        RemoteSongsScreen(title: card.title) {
+        RemoteSongsScreen(title: card.title, context: PlayContext(name: card.title, source: "discover", route: .card(card))) {
             try await YouTubeSource.songs(in: card)
         }
     }
@@ -302,15 +356,17 @@ struct RadioView: View {
     let seed: SongResult
 
     var body: some View {
-        RemoteSongsScreen(title: "\(seed.title) Radio") {
+        RemoteSongsScreen(title: "\(seed.title) Radio", context: PlayContext(name: "\(seed.title) Radio", source: "radio", route: .radio(seed))) {
             try await YouTubeSource.radio(for: seed.id)
         }
     }
 }
 
-// A loaded list of YouTube Music songs, with preview, download, and Start Radio.
+// A loaded list of YouTube Music songs that plays in the player, with download, Download All,
+// and Start Radio.
 private struct RemoteSongsScreen: View {
     let title: String
+    let context: PlayContext
     let load: () async throws -> [SongResult]
     @State private var songs: Loadable<[SongResult]> = .loading
     @State private var radioSeed: SongResult?
@@ -330,8 +386,12 @@ private struct RemoteSongsScreen: View {
                 }
             case .loaded(let list):
                 List {
-                    RemoteSongRows(songs: list) { radioSeed = $0 }
+                    RemoteSongRows(songs: list, playContext: context) { radioSeed = $0 }
                 }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) { DownloadAllButton(songs: list, name: title) }
+                }
+                .safeAreaInset(edge: .top) { DownloadAllBanner(name: title) }
                 .overlay {
                     if list.isEmpty {
                         ContentUnavailableView("No songs here", systemImage: "music.note")
@@ -368,7 +428,7 @@ struct MoodView: View {
             case .loaded(let cards):
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 18) {
                     ForEach(cards) { card in
-                        NavigationLink(value: card) {
+                        NavigationLink(value: DiscoverRoute.card(card)) {
                             CardView(card: card, size: 150)
                         }
                         .buttonStyle(.plain)
