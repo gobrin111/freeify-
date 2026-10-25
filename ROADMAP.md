@@ -75,7 +75,7 @@ settings first. No server may be introduced to make this work.
 
 - [ ] 🔨 Cover art saved with new downloads and shown in lists, the player, and the lock screen
 - [ ] 🔨 Sort the library by recently added, title, or artist
-- [ ] 🔨 Compact player bar that opens a full-screen player with like and queue buttons
+- [ ] 🔨 Compact player bar that opens a full-screen player with like and queue buttons; it has a close button that stops the music, and lists scroll clear of it
 - [ ] 🔨 Shuffle, repeat, and the last song (paused where it stopped) are remembered after Freeify closes
 
 ## 5. Discover
@@ -115,6 +115,7 @@ page change breaks only that row. History and feedback never leave the phone.
 - [ ] 🔨 "Playing from …" in the full-screen player; tapping it opens where playback started: a Discover list, Recently played, Library, Liked Songs, or one of your playlists
 - [ ] 🔨 Download All on those lists: saves the playlist first (songs not yet saved join the library as "Not downloaded"), then downloads them one at a time with progress and Cancel. The screen stays on meanwhile; a song that stalls for 3 minutes is skipped
 - [ ] 🔨 Download Missing in a playlist's More (…) menu finishes an interrupted Download All
+- [ ] 🔨 Shorter gaps between streamed songs: the next one is looked up and buffered in the current song's last 45 seconds, and a stall at a song's end moves on at once when the next is ready
 
 **Done when:** Discover shows personal mixes that change with what you play, and
 feedback is being recorded for milestone 6.

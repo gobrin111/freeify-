@@ -121,6 +121,19 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // finishes here instead.
     private var listedLength: TimeInterval = 0
     private var overrunTicks = 0
+    // The next streamed song, looked up and buffered near the end of the current one so it
+    // starts without a gap. Used only if it's still what plays next.
+    private var prepared: PreparedStream?
+    private var preparingID: String?
+    // Tried once per song; if the lookup fails, the song loads normally when it starts.
+    private var attemptedPrepareID: String?
+
+    private struct PreparedStream {
+        let itemID: String
+        let player: AVPlayer
+        let item: AVPlayerItem
+        let status: NSKeyValueObservation
+    }
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var commands: [(MPRemoteCommand, Any)] = []
@@ -396,15 +409,21 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             UserDefaults.standard.removeObject(forKey: Saved.trackID)
             listedLength = Self.seconds(from: song.duration)
             duration = listedLength
-            isLoading = true
-            loadStream(song, generation: openGeneration)
+            loadStreamArtwork(song, generation: openGeneration)
+            if let prepared, prepared.itemID == item.id {
+                self.prepared = nil
+                attachStream(prepared.player, item: prepared.item, generation: openGeneration)
+            } else {
+                discardPrepared()
+                isLoading = true
+                loadStream(song, generation: openGeneration)
+            }
         }
         beginListen(item)
         return true
     }
 
-    // Resolve the stream link, then start playback if play was pressed meanwhile.
-    private func loadStream(_ song: SongResult, generation: Int) {
+    private func loadStreamArtwork(_ song: SongResult, generation: Int) {
         Task { @MainActor in
             if let url = song.artworkURL ?? song.thumbnailURL,
                let result = try? await URLSession.shared.data(from: url),
@@ -414,44 +433,98 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 updateNowPlaying()
             }
         }
+    }
+
+    // Resolve the stream link, then start playback if play was pressed meanwhile.
+    private func loadStream(_ song: SongResult, generation: Int) {
         Task { @MainActor in
             do {
                 let asset = try await YouTubeSource.previewAsset(videoID: song.id)
                 guard generation == openGeneration else { return }
                 let item = AVPlayerItem(asset: asset)
-                let player = AVPlayer(playerItem: item)
-                stream = player
-                streamStatus = item.observe(\.status) { [weak self] item, _ in
-                    let status = item.status
-                    let seconds = item.duration.seconds
-                    let details = item.error?.localizedDescription
-                    Task { @MainActor [weak self] in
-                        guard let self, generation == self.openGeneration else { return }
-                        if status == .readyToPlay {
-                            self.isLoading = false
-                            if seconds.isFinite && seconds > 0 {
-                                self.duration = self.listedLength > 0 ? min(seconds, self.listedLength) : seconds
-                            }
-                            self.updateNowPlaying()
-                        } else if status == .failed {
-                            self.streamFailed(details ?? "unknown")
-                        }
-                    }
-                }
-                streamEnd = NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
-                ) { [weak self] _ in
-                    Task { @MainActor [weak self] in
-                        guard let self, generation == self.openGeneration else { return }
-                        self.finished(successfully: true)
-                    }
-                }
-                if isPlaying { player.play() }
+                attachStream(AVPlayer(playerItem: item), item: item, generation: generation)
             } catch {
                 guard generation == openGeneration else { return }
                 streamFailed(YouTubeSource.describe(error))
             }
         }
+    }
+
+    // Make a loaded or prepared stream the current one.
+    private func attachStream(_ player: AVPlayer, item: AVPlayerItem, generation: Int) {
+        stream = player
+        isLoading = item.status != .readyToPlay
+        streamStatus = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            let status = item.status
+            let seconds = item.duration.seconds
+            let details = item.error?.localizedDescription
+            Task { @MainActor [weak self] in
+                guard let self, generation == self.openGeneration else { return }
+                if status == .readyToPlay {
+                    self.isLoading = false
+                    if seconds.isFinite && seconds > 0 {
+                        self.duration = self.listedLength > 0 ? min(seconds, self.listedLength) : seconds
+                    }
+                    self.updateNowPlaying()
+                } else if status == .failed {
+                    self.streamFailed(details ?? "unknown")
+                }
+            }
+        }
+        streamEnd = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, generation == self.openGeneration else { return }
+                self.finished(successfully: true)
+            }
+        }
+        if isPlaying { player.play() }
+    }
+
+    // What plays after the current song, unless it repeats.
+    private var nextItem: PlayItem? {
+        guard repeatMode != .one else { return nil }
+        if let first = upNext.first { return first }
+        return neighbor(1).map { queue[$0] }
+    }
+
+    // In a song's last 45 seconds, look up and buffer the next streamed song. Waiting until
+    // then avoids wasted requests when skipping through songs.
+    private func prepareNextIfNeeded() {
+        guard isPlaying, duration > 0, duration - currentTime < 45,
+              let next = nextItem, case .stream(let song) = next,
+              prepared?.itemID != next.id, preparingID != next.id, attemptedPrepareID != next.id
+        else { return }
+        discardPrepared()
+        preparingID = next.id
+        attemptedPrepareID = next.id
+        Task { @MainActor in
+            guard let asset = try? await YouTubeSource.previewAsset(videoID: song.id),
+                  preparingID == next.id
+            else {
+                if preparingID == next.id { preparingID = nil }
+                return
+            }
+            preparingID = nil
+            let item = AVPlayerItem(asset: asset)
+            let player = AVPlayer(playerItem: item)
+            // Buffer the start once it's ready, so it can begin at once.
+            let status = item.observe(\.status, options: [.initial, .new]) { item, _ in
+                guard item.status == .readyToPlay else { return }
+                Task { @MainActor in
+                    // Prerolling before the player is ready raises an exception.
+                    if player.status == .readyToPlay && player.rate == 0 { player.preroll(atRate: 1) }
+                }
+            }
+            prepared = PreparedStream(itemID: next.id, player: player, item: item, status: status)
+        }
+    }
+
+    private func discardPrepared() {
+        prepared?.player.pause()
+        prepared = nil
+        preparingID = nil
     }
 
     // Called every timer tick (half a second) while playing.
@@ -464,8 +537,11 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } else {
             overrunTicks = 0
         }
-        // Past the end: finish at once. Stalled near the end: give it 3 seconds to recover.
-        if overrunTicks >= (stalledAtEnd ? 6 : 1) {
+        // Past the end: finish at once. Stalled near the end: move on at once if the next song
+        // is already buffered, otherwise give the stream 3 seconds to recover.
+        let nextReady = prepared != nil && prepared?.itemID == nextItem?.id
+            && prepared?.item.status == .readyToPlay
+        if overrunTicks >= (stalledAtEnd && !nextReady ? 6 : 1) {
             overrunTicks = 0
             finished(successfully: true)
         }
@@ -537,6 +613,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // Unload the current song, e.g. when it is removed from the library.
     func stop() {
         endListen(finished: false)
+        discardPrepared()
         pause()
         openGeneration += 1
         audio = nil
@@ -584,6 +661,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 self.elapsed = self.currentTime
                 if self.isPlaying && !self.isLoading { self.listen?.seconds += 0.5 }
                 self.finishStreamAtListedLength()
+                self.prepareNextIfNeeded()
                 if self.trackID != nil { UserDefaults.standard.set(self.elapsed, forKey: Saved.time) }
             }
         }
