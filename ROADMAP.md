@@ -112,8 +112,9 @@ page change breaks only that row. History and feedback never leave the phone.
 ### 5.5 Playing Discover lists
 
 - [ ] 🔨 Play buttons in mixes, charts, playlists, albums, and radios play in the player (bottom bar, lock screen, next/previous) with the list queued; songs not saved are streamed, saved songs play from their file. Search keeps previews
-- [ ] 🔨 "Playing from …" in the full-screen player; tapping it opens that Discover list again
-- [ ] 🔨 Download All on those lists: saves every missing song, then puts the list in a playlist with its name (or adds to that playlist if it exists), with progress and Cancel
+- [ ] 🔨 "Playing from …" in the full-screen player; tapping it opens where playback started: a Discover list, Recently played, Library, Liked Songs, or one of your playlists
+- [ ] 🔨 Download All on those lists: saves the playlist first (songs not yet saved join the library as "Not downloaded"), then downloads them one at a time with progress and Cancel. The screen stays on meanwhile; a song that stalls for 3 minutes is skipped
+- [ ] 🔨 Download Missing in a playlist's More (…) menu finishes an interrupted Download All
 
 **Done when:** Discover shows personal mixes that change with what you play, and
 feedback is being recorded for milestone 6.

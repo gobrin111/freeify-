@@ -15,6 +15,8 @@ final class Track {
     var isDownloaded = true
     var likedAt: Date?
     var artworkFilename: String?
+    // YouTube Music's cover art, for songs added as "Not downloaded" by Download All.
+    var remoteArtworkURL: String?
 
     init(title: String, artist: String?, filename: String, youtubeID: String?) {
         id = UUID()
@@ -164,6 +166,13 @@ enum AudioFiles {
             try FileManager.default.moveItem(at: temporary, to: destination)
         }
         return SavedAudio(title: title, artist: artist, filename: filename, youtubeID: youtubeID)
+    }
+
+    // Delete a download's files, e.g. one that finished after it was given up on.
+    static func discard(_ saved: SavedAudio) {
+        for name in [saved.filename, saved.artworkFilename].compactMap({ $0 }) where !name.isEmpty {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
     }
 
     static func saveArtwork(_ data: Data) throws -> String {

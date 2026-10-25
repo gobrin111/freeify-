@@ -1,8 +1,23 @@
 import Foundation
 import SwiftData
+import UIKit
 
 enum AppTab {
     case discover, search, library
+}
+
+// A page inside the Library tab.
+enum LibraryRoute: Hashable {
+    case liked
+    case playlists
+    case playlist(UUID)
+}
+
+// A screen the player can reopen from "Playing from": a tab and the pages opened inside it.
+// An empty path is the tab's main page.
+enum AppRoute {
+    case discover([DiscoverRoute])
+    case library([LibraryRoute])
 }
 
 // Progress of "Download All" for one Discover list.
@@ -23,16 +38,23 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var downloadProgress: Double?
     @Published private(set) var bulkDownload: BulkDownload?
     @Published var errorMessage: String?
-    // Navigation, so the player can open the Discover list a song is playing from.
+    // Navigation, so the player can open the list a song is playing from.
     @Published var selectedTab = AppTab.discover
     @Published var discoverPath: [DiscoverRoute] = []
+    @Published var libraryPath: [LibraryRoute] = []
     private var cancelBulk = false
 
     var isDownloading: Bool { downloadingTrackID != nil || downloadingSongID != nil || bulkDownload != nil }
 
-    func show(_ route: DiscoverRoute) {
-        selectedTab = .discover
-        discoverPath = [route]
+    func show(_ route: AppRoute) {
+        switch route {
+        case .discover(let path):
+            selectedTab = .discover
+            discoverPath = path
+        case .library(let path):
+            selectedTab = .library
+            libraryPath = path
+        }
     }
 
     // Record finished plays as listening history.
@@ -77,37 +99,53 @@ final class LibraryStore: ObservableObject {
         player.play(item, in: items, context: playContext)
     }
 
-    // Download every song in a Discover list that isn't saved yet, then put the whole list
-    // in a playlist with its name (adding to that playlist if it already exists).
+    // Put a Discover list in a playlist with its name (or add to that playlist), then download
+    // its songs. The playlist is saved first: songs not saved yet join the library as
+    // "Not downloaded", so the playlist is complete even if Freeify closes midway.
     func downloadAll(_ songs: [SongResult], named name: String, in context: ModelContext) {
         guard !isDownloading else { return }
-        let missing = songs.filter { savedTracks(in: context)[$0.id] == nil }
+        let existing = libraryTracks(in: context)
+        let tracks = songs.map { song -> Track in
+            if let track = existing[song.id] { return track }
+            let track = Track(title: song.title, artist: song.artist, filename: "", youtubeID: song.id)
+            track.isDownloaded = false
+            track.remoteArtworkURL = song.artworkURL?.absoluteString
+            context.insert(track)
+            return track
+        }
+        let playlists = (try? context.fetch(FetchDescriptor<Playlist>())) ?? []
+        if let playlist = playlists.first(where: { $0.name == name }) {
+            add(tracks, to: playlist, in: context)
+        } else {
+            createPlaylist(named: name, with: tracks, in: context)
+        }
+        downloadMissing(tracks, named: name, in: context)
+    }
+
+    // Download a list's "Not downloaded" songs one at a time. A song that fails or stalls is
+    // skipped and stays "Not downloaded" to try again.
+    func downloadMissing(_ tracks: [Track], named name: String, in context: ModelContext) {
+        guard !isDownloading else { return }
+        let missing = tracks.filter { !$0.isDownloaded && $0.youtubeID != nil }
         bulkDownload = BulkDownload(name: name, total: missing.count)
         cancelBulk = false
+        // Keep the screen on, so auto-lock doesn't let iOS pause the downloads.
+        UIApplication.shared.isIdleTimerDisabled = true
         Task { @MainActor in
             var failed = 0
-            for song in missing {
+            for track in missing {
                 if cancelBulk { break }
                 do {
-                    try await downloadSong(song, in: context)
+                    try await downloadTrack(track, in: context)
                 } catch {
                     failed += 1
                 }
                 bulkDownload?.done += 1
             }
-            let saved = savedTracks(in: context)
-            let tracks = songs.compactMap { saved[$0.id] }
-            if !tracks.isEmpty {
-                let playlists = (try? context.fetch(FetchDescriptor<Playlist>())) ?? []
-                if let playlist = playlists.first(where: { $0.name == name }) {
-                    add(tracks, to: playlist, in: context)
-                } else {
-                    createPlaylist(named: name, with: tracks, in: context)
-                }
-            }
+            UIApplication.shared.isIdleTimerDisabled = false
             bulkDownload = nil
             if failed > 0 {
-                errorMessage = "\(failed) \(failed == 1 ? "song" : "songs") couldn’t be downloaded. The rest are in the “\(name)” playlist; try Download All again for the missing ones."
+                errorMessage = "\(failed) \(failed == 1 ? "song" : "songs") couldn’t be downloaded. They’re in the “\(name)” playlist as Not downloaded; tap one, or use Download Missing in the playlist, to try again."
             }
         }
     }
@@ -115,6 +153,15 @@ final class LibraryStore: ObservableObject {
     // Stops after the song downloading now finishes.
     func cancelDownloadAll() {
         cancelBulk = true
+    }
+
+    // Library songs from YouTube, saved or not, by video ID.
+    private func libraryTracks(in context: ModelContext) -> [String: Track] {
+        let tracks = (try? context.fetch(FetchDescriptor<Track>())) ?? []
+        return Dictionary(
+            tracks.compactMap { track in track.youtubeID.map { ($0, track) } },
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 
     // Saved songs from YouTube, by video ID.
@@ -141,7 +188,10 @@ final class LibraryStore: ObservableObject {
     }
 
     func remove(_ tracks: [Track], in context: ModelContext) {
-        let fileURLs = tracks.flatMap { [$0.fileURL, $0.artworkURL].compactMap { $0 } }
+        // "Not downloaded" songs have no audio file to delete.
+        let fileURLs = tracks.flatMap { track in
+            [track.isDownloaded && !track.filename.isEmpty ? track.fileURL : nil, track.artworkURL].compactMap { $0 }
+        }
         let ids = Set(tracks.map { $0.id })
         for playlist in (try? context.fetch(FetchDescriptor<Playlist>())) ?? [] {
             playlist.trackIDs.removeAll { ids.contains($0) }
@@ -231,33 +281,53 @@ final class LibraryStore: ObservableObject {
     }
 
     func redownload(_ track: Track, in context: ModelContext) {
-        guard let videoID = track.youtubeID, !isDownloading else { return }
-        downloadingTrackID = track.id
-        downloadProgress = nil
+        guard !isDownloading else { return }
         Task { @MainActor in
-            defer { downloadingTrackID = nil }
             do {
-                let saved = try await YouTubeSource.download(videoID: videoID) { value in
-                    Task { @MainActor in self.downloadProgress = value }
-                }
-                track.filename = saved.filename
-                track.isDownloaded = true
-                // Keep the existing cover art; use the new copy only if there was none.
-                if track.artworkFilename == nil {
-                    track.artworkFilename = saved.artworkFilename
-                } else if let extra = saved.artworkFilename {
-                    try? FileManager.default.removeItem(at: AudioFiles.directory.appendingPathComponent(extra))
-                }
-                do {
-                    try context.save()
-                } catch {
-                    context.rollback()
-                    try? FileManager.default.removeItem(at: AudioFiles.directory.appendingPathComponent(saved.filename))
-                    throw error
-                }
+                try await downloadTrack(track, in: context)
             } catch {
                 errorMessage = YouTubeSource.describe(error)
             }
+        }
+    }
+
+    // Download a library song's audio, keeping its details and any existing cover art.
+    private func downloadTrack(_ track: Track, in context: ModelContext) async throws {
+        guard let videoID = track.youtubeID else { return }
+        downloadingTrackID = track.id
+        downloadingSongID = videoID // so Discover rows show the progress too
+        downloadProgress = nil
+        // If the phone is locked mid-song, ask iOS for time to finish it.
+        var background = UIBackgroundTaskIdentifier.invalid
+        background = UIApplication.shared.beginBackgroundTask(withName: "Download song") {
+            UIApplication.shared.endBackgroundTask(background)
+            background = .invalid
+        }
+        defer {
+            downloadingTrackID = nil
+            downloadingSongID = nil
+            if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
+        }
+        let saved = try await YouTubeSource.download(
+            videoID: videoID,
+            artworkURL: track.remoteArtworkURL.flatMap { URL(string: $0) }
+        ) { value in
+            Task { @MainActor in self.downloadProgress = value }
+        }
+        track.filename = saved.filename
+        track.isDownloaded = true
+        // Keep the existing cover art; use the new copy only if there was none.
+        if track.artworkFilename == nil {
+            track.artworkFilename = saved.artworkFilename
+        } else if let extra = saved.artworkFilename {
+            try? FileManager.default.removeItem(at: AudioFiles.directory.appendingPathComponent(extra))
+        }
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            try? FileManager.default.removeItem(at: AudioFiles.directory.appendingPathComponent(saved.filename))
+            throw error
         }
     }
 }

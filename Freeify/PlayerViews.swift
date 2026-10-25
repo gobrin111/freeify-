@@ -132,7 +132,7 @@ struct NowPlayingView: View {
         }
     }
 
-    // "Playing from" a list; Discover lists open again when tapped.
+    // "Playing from" a list, which opens again when tapped.
     private func playingFrom(_ context: PlayContext) -> some View {
         Button {
             guard let route = context.route else { return }
@@ -154,7 +154,7 @@ struct NowPlayingView: View {
             }
         }
         .disabled(context.route == nil)
-        .accessibilityHint(context.route == nil ? "" : "Opens this list in Discover")
+        .accessibilityHint(context.route == nil ? "" : "Opens this list")
     }
 
     // Saved songs can be liked; streamed songs can be downloaded.

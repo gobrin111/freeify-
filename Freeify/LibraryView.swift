@@ -40,7 +40,7 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $store.libraryPath) {
             Group {
                 if tracks.isEmpty {
                     ContentUnavailableView {
@@ -71,6 +71,13 @@ struct LibraryView: View {
             .environment(\.editMode, $editMode)
             .navigationDestination(item: $radioSeed) { seed in
                 RadioView(seed: seed)
+            }
+            .navigationDestination(for: LibraryRoute.self) { route in
+                switch route {
+                case .liked: LikedSongsView()
+                case .playlists: PlaylistsView()
+                case .playlist(let id): PlaylistRouteView(id: id)
+                }
             }
             .sheet(isPresented: Binding(
                 get: { !tracksToAdd.isEmpty },
@@ -133,14 +140,10 @@ struct LibraryView: View {
         List(selection: $selection) {
             if searchText.isEmpty && !editMode.isEditing {
                 Section {
-                    NavigationLink {
-                        LikedSongsView()
-                    } label: {
+                    NavigationLink(value: LibraryRoute.liked) {
                         Label("Liked Songs", systemImage: "heart.fill")
                     }
-                    NavigationLink {
-                        PlaylistsView()
-                    } label: {
+                    NavigationLink(value: LibraryRoute.playlists) {
                         Label("Playlists", systemImage: "music.note.list")
                     }
                 }
@@ -152,7 +155,7 @@ struct LibraryView: View {
                             TrackRow(track: track)
                         } else {
                             Button {
-                                store.select(track, in: filteredTracks, from: PlayContext(name: "Library", source: "library"),
+                                store.select(track, in: filteredTracks, from: PlayContext(name: "Library", source: "library", route: .library([])),
                                              context: modelContext)
                             } label: {
                                 TrackRow(track: track)

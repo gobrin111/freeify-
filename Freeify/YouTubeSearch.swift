@@ -526,13 +526,44 @@ enum YouTubeSource {
         artworkURL: URL? = nil,
         onProgress: @escaping @Sendable (Double) -> Void
     ) async throws -> SavedAudio {
-        var saved = try await download(YTVideo(videoId: videoID), title: title, artist: artist, onProgress: onProgress)
-        // Cover art is optional; fall back to the video thumbnail.
-        let fallback = URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
-        if let url = artworkURL ?? fallback {
-            saved.artworkFilename = await fetchArtwork(from: url)
+        try await withTimeout(downloadTimeout, discardLate: AudioFiles.discard) {
+            var saved = try await download(YTVideo(videoId: videoID), title: title, artist: artist, onProgress: onProgress)
+            // Cover art is optional; fall back to the video thumbnail.
+            let fallback = URL(string: "https://i.ytimg.com/vi/\(videoID)/hqdefault.jpg")
+            if let url = artworkURL ?? fallback {
+                saved.artworkFilename = await fetchArtwork(from: url)
+            }
+            return saved
         }
-        return saved
+    }
+
+    // A download that stalls, e.g. after iOS paused Freeify while the phone was locked, is
+    // given up so Download All can move on. Generous enough for a slow cellular connection.
+    private static let downloadTimeout: Duration = .seconds(180)
+
+    // Runs `operation`, throwing if it takes longer than `limit`. A result that arrives too
+    // late goes to `discardLate`, so its files don't linger.
+    private static func withTimeout<T: Sendable>(
+        _ limit: Duration,
+        discardLate: @escaping @Sendable (T) -> Void,
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            let gate = ResumeGate(continuation)
+            let work = Task {
+                do {
+                    let value = try await operation()
+                    if !gate.resume(with: .success(value)) { discardLate(value) }
+                } catch {
+                    _ = gate.resume(with: .failure(error))
+                }
+            }
+            Task {
+                try? await Task.sleep(for: limit)
+                let stalled = SourceError(errorDescription: "The download stalled and was skipped. Try it again.")
+                if gate.resume(with: .failure(stalled)) { work.cancel() }
+            }
+        }
     }
 
     private static func fetchArtwork(from url: URL) async -> String? {
@@ -650,6 +681,25 @@ enum YouTubeSource {
             message = "YouTube wouldn’t let Freeify get this song. Try again, or try another version of it."
         }
         return "\(message)\n\nDetails: \(details)"
+    }
+
+    // Resumes a continuation once, from whichever task finishes first.
+    private final class ResumeGate<T>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T, Error>?
+
+        init(_ continuation: CheckedContinuation<T, Error>) {
+            self.continuation = continuation
+        }
+
+        func resume(with result: Result<T, Error>) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let continuation else { return false }
+            self.continuation = nil
+            continuation.resume(with: result)
+            return true
+        }
     }
 
     struct SourceError: LocalizedError {

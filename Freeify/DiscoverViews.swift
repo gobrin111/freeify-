@@ -77,7 +77,7 @@ struct DiscoverView: View {
                     LazyHStack(alignment: .top, spacing: 14) {
                         ForEach(recent) { track in
                             Button {
-                                store.select(track, in: recent, from: PlayContext(name: "Recently played", source: "recent"),
+                                store.select(track, in: recent, from: PlayContext(name: "Recently played", source: "recent", route: .discover([])),
                                              context: modelContext)
                             } label: {
                                 VStack(alignment: .leading, spacing: 6) {
@@ -278,7 +278,7 @@ struct MixView: View {
         List {
             RemoteSongRows(
                 songs: songs,
-                playContext: PlayContext(name: mix.title, source: "mix", route: .mix(mix)),
+                playContext: PlayContext(name: mix.title, source: "mix", route: .discover([.mix(mix)])),
                 startRadio: { radioSeed = $0 },
                 onAction: { song, action in
                     MadeForYou.record(action, song: song, in: mix, context: modelContext)
@@ -345,7 +345,7 @@ struct CardSongsView: View {
     let card: BrowseCard
 
     var body: some View {
-        RemoteSongsScreen(title: card.title, context: PlayContext(name: card.title, source: "discover", route: .card(card))) {
+        RemoteSongsScreen(title: card.title, context: PlayContext(name: card.title, source: "discover", route: .discover([.card(card)]))) {
             try await YouTubeSource.songs(in: card)
         }
     }
@@ -356,7 +356,7 @@ struct RadioView: View {
     let seed: SongResult
 
     var body: some View {
-        RemoteSongsScreen(title: "\(seed.title) Radio", context: PlayContext(name: "\(seed.title) Radio", source: "radio", route: .radio(seed))) {
+        RemoteSongsScreen(title: "\(seed.title) Radio", context: PlayContext(name: "\(seed.title) Radio", source: "radio", route: .discover([.radio(seed)]))) {
             try await YouTubeSource.radio(for: seed.id)
         }
     }

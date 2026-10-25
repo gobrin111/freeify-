@@ -55,8 +55,8 @@ struct PlayContext {
     let name: String
     // For listening history: library, liked, playlist, recent, mix, discover, or radio.
     let source: String
-    // Set for Discover lists, so the player can open the list again.
-    var route: DiscoverRoute?
+    // The screen to open from "Playing from"; nil when there's nothing to go back to.
+    var route: AppRoute?
 }
 
 // One play of a song, recorded as listening history when it ends.

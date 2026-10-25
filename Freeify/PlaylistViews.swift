@@ -16,7 +16,8 @@ struct LikedSongsView: View {
         List {
             ForEach(liked) { track in
                 Button {
-                    store.select(track, in: liked, from: PlayContext(name: "Liked Songs", source: "liked"), context: modelContext)
+                    store.select(track, in: liked, from: PlayContext(name: "Liked Songs", source: "liked", route: .library([.liked])),
+                                 context: modelContext)
                 } label: {
                     TrackRow(track: track)
                 }
@@ -54,9 +55,7 @@ struct PlaylistsView: View {
     var body: some View {
         List {
             ForEach(playlists) { playlist in
-                NavigationLink {
-                    PlaylistDetailView(playlist: playlist)
-                } label: {
+                NavigationLink(value: LibraryRoute.playlist(playlist.id)) {
                     PlaylistLabel(playlist: playlist)
                 }
                 .swipeActions(edge: .trailing) {
@@ -132,7 +131,9 @@ struct PlaylistDetailView: View {
         List {
             ForEach(songs) { track in
                 Button {
-                    store.select(track, in: songs, from: PlayContext(name: playlist.name, source: "playlist"), context: modelContext)
+                    store.select(track, in: songs, from: PlayContext(
+                        name: playlist.name, source: "playlist", route: .library([.playlists, .playlist(playlist.id)])
+                    ), context: modelContext)
                 } label: {
                     TrackRow(track: track)
                 }
@@ -164,6 +165,7 @@ struct PlaylistDetailView: View {
             }
         }
         .navigationTitle(playlist.name)
+        .safeAreaInset(edge: .top) { DownloadAllBanner(name: playlist.name) }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if !songs.isEmpty { EditButton() }
@@ -172,6 +174,15 @@ struct PlaylistDetailView: View {
                         addingSongs = true
                     } label: {
                         Label("Add Songs", systemImage: "plus")
+                    }
+                    let missing = songs.filter { !$0.isDownloaded && $0.youtubeID != nil }
+                    if !missing.isEmpty {
+                        Button {
+                            store.downloadMissing(songs, named: playlist.name, in: modelContext)
+                        } label: {
+                            Label("Download Missing (\(missing.count))", systemImage: "arrow.down.circle")
+                        }
+                        .disabled(store.isDownloading)
                     }
                     Button {
                         newName = playlist.name
@@ -199,6 +210,20 @@ struct PlaylistDetailView: View {
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+    }
+}
+
+// Opens a playlist by ID, e.g. from "Playing from", which may outlive the playlist.
+struct PlaylistRouteView: View {
+    let id: UUID
+    @Query private var playlists: [Playlist]
+
+    var body: some View {
+        if let playlist = playlists.first(where: { $0.id == id }) {
+            PlaylistDetailView(playlist: playlist)
+        } else {
+            ContentUnavailableView("This playlist was deleted", systemImage: "music.note.list")
         }
     }
 }
