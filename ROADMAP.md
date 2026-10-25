@@ -86,19 +86,19 @@ page change breaks only that row. History and feedback never leave the phone.
 
 ### 5.1 Tabs and listening history
 
-- [ ] Three tabs: Discover, Search, and Library, with the player bar shared above them. YouTube Music search moves from a sheet into the Search tab
-- [ ] Save listening history on the phone: song, time, seconds listened, finished or skipped, and where it was played from (library, playlist, radio)
-- [ ] "Recently played" row in Discover
+- [ ] 🔨 Three tabs: Discover, Search, and Library, with the player bar shared above them. YouTube Music search moves from a sheet into the Search tab
+- [ ] 🔨 Save listening history on the phone: song, time, seconds listened, finished or skipped, and where it was played from (library, playlist, radio)
+- [ ] 🔨 "Recently played" row in Discover
 
 ### 5.2 Song radio
 
-- [ ] "Start Radio" in a song's long-press menu: similar songs from YouTube Music, with preview, download, and "In library" like search
+- [ ] 🔨 "Start Radio" in the long-press menu of library songs from YouTube, search results, and Discover lists: similar songs with preview, download, and "In library"
 
 ### 5.3 YouTube Music rows
 
-- [ ] Charts: top songs in your country
-- [ ] New releases
-- [ ] Moods & genres tiles that open a list of songs
+- [ ] 🔨 Charts: YouTube's chart playlists for your country
+- [ ] 🔨 New releases
+- [ ] 🔨 Moods & genres tiles that open playlists, then their songs
 
 ### 5.4 Made for you (rule-based)
 

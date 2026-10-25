@@ -16,7 +16,7 @@ struct LikedSongsView: View {
         List {
             ForEach(liked) { track in
                 Button {
-                    store.select(track, in: liked, context: modelContext)
+                    store.select(track, in: liked, from: "liked", context: modelContext)
                 } label: {
                     TrackRow(track: track)
                 }
@@ -132,7 +132,7 @@ struct PlaylistDetailView: View {
         List {
             ForEach(songs) { track in
                 Button {
-                    store.select(track, in: songs, context: modelContext)
+                    store.select(track, in: songs, from: "playlist", context: modelContext)
                 } label: {
                     TrackRow(track: track)
                 }

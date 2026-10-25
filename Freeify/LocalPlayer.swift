@@ -7,6 +7,20 @@ enum RepeatMode: String {
     case off, all, one
 }
 
+// One play of a song, recorded as listening history when it ends.
+struct Listen {
+    let trackID: UUID
+    let youtubeID: String?
+    let title: String
+    let artist: String?
+    let duration: TimeInterval
+    // Where it was played from: library, liked, playlist, recent, or queue.
+    let source: String
+    let startedAt = Date()
+    var seconds: TimeInterval = 0
+    var finished = false
+}
+
 // Shuffle, repeat, and the last song and position, kept across launches.
 private enum Saved {
     static let shuffle = "player.shuffle"
@@ -37,6 +51,9 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var source: [Track] = []
     private var playingFromUpNext = false
     private var nowPlayingArtwork: MPMediaItemArtwork?
+    var onListen: ((Listen) -> Void)?
+    private var listen: Listen?
+    private var playSource = "library"
     private var audio: AVAudioPlayer?
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
@@ -76,12 +93,13 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     // Play a track, queueing the rest of the list it was picked from.
-    func play(_ track: Track, in list: [Track]) {
+    func play(_ track: Track, in list: [Track], from source: String) {
         if trackID == track.id {
             play()
             return
         }
-        source = list
+        playSource = source
+        self.source = list
         queue = shuffle ? [track] + list.filter { $0.id != track.id }.shuffled() : list
         position = queue.firstIndex { $0.id == track.id } ?? 0
         playingFromUpNext = false
@@ -132,7 +150,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func playNext(_ track: Track) {
         guard track.isDownloaded else { return }
         if audio == nil {
-            play(track, in: [track])
+            play(track, in: [track], from: "queue")
         } else {
             upNext.insert(track, at: 0)
             updateNowPlaying()
@@ -142,7 +160,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func addToQueue(_ track: Track) {
         guard track.isDownloaded else { return }
         if audio == nil {
-            play(track, in: [track])
+            play(track, in: [track], from: "queue")
         } else {
             upNext.append(track)
             updateNowPlaying()
@@ -219,10 +237,27 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func playUpNext() {
         let track = upNext.removeFirst()
-        if open(track) {
-            playingFromUpNext = true
-            play()
-        }
+        playingFromUpNext = true
+        if open(track) { play() }
+    }
+
+    private func beginListen(_ track: Track) {
+        listen = Listen(
+            trackID: track.id,
+            youtubeID: track.youtubeID,
+            title: track.title,
+            artist: track.artist,
+            duration: duration,
+            source: playingFromUpNext ? "queue" : playSource
+        )
+    }
+
+    private func endListen(finished: Bool) {
+        guard var listen else { return }
+        self.listen = nil
+        listen.finished = finished
+        // Songs that were only loaded or barely started aren't history.
+        if finished || listen.seconds >= 5 { onListen?(listen) }
     }
 
     // The next downloaded track in the given direction, wrapping only with repeat all.
@@ -250,6 +285,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func open(_ track: Track) -> Bool {
+        endListen(finished: false)
         do {
             let next = try AVAudioPlayer(contentsOf: track.fileURL)
             audio?.stop()
@@ -267,6 +303,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             duration = next.duration
             elapsed = 0
             isPlaying = false
+            beginListen(track)
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -276,6 +313,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func play() {
         guard let audio else { return }
+        if listen == nil, let current { beginListen(current) }
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default)
@@ -311,6 +349,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // Unload the current track, e.g. when it is removed from the library.
     func stop() {
+        endListen(finished: false)
         pause()
         audio = nil
         source = []
@@ -347,6 +386,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.elapsed = self.audio?.currentTime ?? 0
+                if self.isPlaying { self.listen?.seconds += 0.5 }
                 UserDefaults.standard.set(self.elapsed, forKey: Saved.time)
             }
         }
@@ -432,13 +472,18 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 self.pause()
                 self.errorMessage = "Playback ended unexpectedly."
             } else if self.repeatMode == .one {
+                self.endListen(finished: true)
+                if let current = self.current { self.beginListen(current) }
                 self.seek(to: 0)
                 self.play()
             } else if !self.upNext.isEmpty {
+                self.endListen(finished: true)
                 self.playUpNext()
             } else if let index = self.neighbor(1) {
+                self.endListen(finished: true)
                 self.move(to: index)
             } else {
+                self.endListen(finished: true)
                 self.pause()
                 self.seek(to: 0)
             }

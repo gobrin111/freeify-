@@ -1,16 +1,12 @@
 import AVFoundation
 import Foundation
+import SwiftData
 import SwiftUI
 import YouTubeKit
 
+// The Search tab: YouTube Music's Songs tab, with more results as you scroll.
 @MainActor
 struct YouTubeSearchView: View {
-    // Video IDs already in the library, so the same song isn't downloaded twice.
-    let libraryIDs: Set<String>
-    let onDownloaded: (SavedAudio) throws -> Void
-    @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var player: LocalPlayer
-    @StateObject private var preview = PreviewPlayer()
     @State private var query = ""
     @State private var results: [SongResult] = []
     @State private var continuation: String?
@@ -20,74 +16,13 @@ struct YouTubeSearchView: View {
     @State private var searchGeneration = 0
     @State private var isSearching = false
     @State private var hasSearched = false
-    @State private var downloadingID: String?
-    @State private var progress: Double?
     @State private var errorMessage: String?
+    @State private var radioSeed: SongResult?
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(results) { song in
-                    HStack(spacing: 14) {
-                        // Streamed for display only; nothing here is saved.
-                        AsyncImage(url: song.thumbnailURL) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            Image(systemName: "music.note")
-                                .foregroundStyle(.tint)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .background(Color.secondary.opacity(0.15))
-                        }
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(song.title)
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                            Text([song.artist, song.duration, libraryIDs.contains(song.id) ? "In library" : nil]
-                                .compactMap { $0 }.joined(separator: " · "))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if downloadingID == song.id {
-                                ProgressView(value: progress ?? 0)
-                                Text(progress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        Button {
-                            togglePreview(song)
-                        } label: {
-                            if preview.songID == song.id && preview.isLoading {
-                                ProgressView()
-                            } else {
-                                Image(systemName: preview.songID == song.id ? "stop.circle" : "play.circle")
-                                    .font(.title2)
-                            }
-                        }
-                        .frame(width: 32)
-                        .accessibilityLabel(preview.songID == song.id ? "Stop preview" : "Preview")
-                        if libraryIDs.contains(song.id) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 32)
-                                .accessibilityLabel("In library")
-                        } else if downloadingID != song.id {
-                            Button {
-                                download(song)
-                            } label: {
-                                Image(systemName: "arrow.down.circle").font(.title2)
-                            }
-                            .frame(width: 32)
-                            .accessibilityLabel("Download")
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .padding(.vertical, 6)
-                }
+                RemoteSongRows(songs: results) { radioSeed = $0 }
                 if continuation != nil {
                     Group {
                         if loadMoreFailed {
@@ -117,27 +52,15 @@ struct YouTubeSearchView: View {
                     }
                 }
             }
-            .navigationTitle("YouTube Music")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Search")
             .searchable(
                 text: $query,
                 placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Song or artist"
+                prompt: "Songs on YouTube Music"
             )
             .onSubmit(of: .search) { search() }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                        .disabled(downloadingID != nil)
-                }
-            }
-            .alert("Couldn’t preview song", isPresented: Binding(
-                get: { preview.errorMessage != nil },
-                set: { if !$0 { preview.errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { preview.errorMessage = nil }
-            } message: {
-                Text(preview.errorMessage ?? "")
+            .navigationDestination(item: $radioSeed) { seed in
+                RadioView(seed: seed)
             }
             .alert("Something went wrong", isPresented: Binding(
                 get: { errorMessage != nil },
@@ -148,21 +71,11 @@ struct YouTubeSearchView: View {
                 Text(errorMessage ?? "")
             }
         }
-        .interactiveDismissDisabled(downloadingID != nil)
-        .onDisappear { preview.stop() }
-    }
-
-    // Pause library playback so the preview isn't mixed with it.
-    private func togglePreview(_ song: SongResult) {
-        if preview.songID != song.id && player.isPlaying {
-            player.pause()
-        }
-        preview.toggle(song)
     }
 
     private func search() {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, downloadingID == nil else { return }
+        guard !text.isEmpty else { return }
         isSearching = true
         searchGeneration += 1
         let generation = searchGeneration
@@ -209,25 +122,101 @@ struct YouTubeSearchView: View {
             }
         }
     }
+}
 
-    private func download(_ song: SongResult) {
-        guard downloadingID == nil, !isSearching, !libraryIDs.contains(song.id) else { return }
-        downloadingID = song.id
-        progress = nil
-        Task { @MainActor in
-            defer { downloadingID = nil }
-            do {
-                let saved = try await YouTubeSource.download(
-                    videoID: song.id, title: song.title, artist: song.artist, artworkURL: song.artworkURL
-                ) { value in
-                    Task { @MainActor in progress = value }
+// YouTube Music songs with cover art, preview, and download, for use inside a List.
+// Shared by search, radio, and Discover.
+struct RemoteSongRows: View {
+    let songs: [SongResult]
+    var startRadio: ((SongResult) -> Void)?
+    @Query private var tracks: [Track]
+
+    var body: some View {
+        // Video IDs already in the library, so the same song isn't downloaded twice.
+        let libraryIDs = Set(tracks.compactMap { $0.youtubeID })
+        ForEach(songs) { song in
+            RemoteSongRow(song: song, inLibrary: libraryIDs.contains(song.id))
+                .contextMenu {
+                    if let startRadio {
+                        Button {
+                            startRadio(song)
+                        } label: {
+                            Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
+                        }
+                    }
                 }
-                try onDownloaded(saved)
-                dismiss()
-            } catch {
-                errorMessage = YouTubeSource.describe(error)
+        }
+    }
+}
+
+private struct RemoteSongRow: View {
+    let song: SongResult
+    let inLibrary: Bool
+    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var store: LibraryStore
+    @EnvironmentObject private var preview: PreviewPlayer
+
+    var body: some View {
+        HStack(spacing: 14) {
+            // Streamed for display only; nothing here is saved.
+            AsyncImage(url: song.thumbnailURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Image(systemName: "music.note")
+                    .foregroundStyle(.tint)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.secondary.opacity(0.15))
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(song.title)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                Text([song.artist, song.duration, inLibrary ? "In library" : nil]
+                    .compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if store.downloadingSongID == song.id {
+                    ProgressView(value: store.downloadProgress ?? 0)
+                    Text(store.downloadProgress.map { "Downloading \(Int($0 * 100))%" } ?? "Preparing…")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Button {
+                store.togglePreview(song)
+            } label: {
+                if preview.songID == song.id && preview.isLoading {
+                    ProgressView()
+                } else {
+                    Image(systemName: preview.songID == song.id ? "stop.circle" : "play.circle")
+                        .font(.title2)
+                }
+            }
+            .frame(width: 32)
+            .accessibilityLabel(preview.songID == song.id ? "Stop preview" : "Preview")
+            if inLibrary {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32)
+                    .accessibilityLabel("In library")
+            } else if store.downloadingSongID != song.id {
+                Button {
+                    store.download(song, in: modelContext)
+                } label: {
+                    Image(systemName: "arrow.down.circle").font(.title2)
+                }
+                .frame(width: 32)
+                .disabled(store.isDownloading)
+                .accessibilityLabel("Download")
             }
         }
+        .buttonStyle(.borderless)
+        .padding(.vertical, 6)
     }
 }
 
@@ -303,7 +292,7 @@ final class PreviewPlayer: ObservableObject {
     }
 }
 
-struct SongResult: Identifiable, Sendable {
+struct SongResult: Identifiable, Hashable, Sendable {
     let id: String // YouTube video ID
     let title: String
     let artist: String?
@@ -350,7 +339,7 @@ enum YouTubeSource {
     // Search YouTube Music's Songs tab, the way ytmusicapi does, so results are songs
     // with their real artist instead of every kind of YouTube video.
     static func searchSongs(_ query: String) async throws -> SongPage {
-        let json = try await musicSearch(urlSuffix: "", extraBody: [
+        let json = try await musicRequest("search", body: [
             "query": query,
             "params": "EgWKAQIIAWoMEA4QChADEAQQCRAF" // Songs filter
         ])
@@ -366,7 +355,7 @@ enum YouTubeSource {
     // The next page of a search, for infinite scrolling.
     static func moreSongs(_ continuation: String) async throws -> SongPage {
         let token = continuation.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? continuation
-        let json = try await musicSearch(urlSuffix: "&ctoken=\(token)&continuation=\(token)", extraBody: [:])
+        let json = try await musicRequest("search", urlSuffix: "&ctoken=\(token)&continuation=\(token)", body: [:])
         let shelf = dig(json, "continuationContents", "musicShelfContinuation")
         return SongPage(
             songs: (dig(shelf, "contents") as? [Any] ?? []).compactMap(parseSong),
@@ -379,8 +368,9 @@ enum YouTubeSource {
         return dig(continuations?.first, "nextContinuationData", "continuation") as? String
     }
 
-    private static func musicSearch(urlSuffix: String, extraBody: [String: Any]) async throws -> Any {
-        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/search?prettyPrint=false\(urlSuffix)")!)
+    // A request to one of YouTube Music's web endpoints (search, browse, next).
+    static func musicRequest(_ endpoint: String, urlSuffix: String = "", body extraBody: [String: Any]) async throws -> Any {
+        var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/\(endpoint)?prettyPrint=false\(urlSuffix)")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
@@ -391,14 +381,15 @@ enum YouTubeSource {
         body["context"] = ["client": [
             "clientName": "WEB_REMIX",
             "clientVersion": musicClientVersion(),
-            "hl": model.selectedLocaleLanguageCode
+            "hl": model.selectedLocaleLanguageCode,
+            "gl": Locale.current.region?.identifier ?? "US" // charts and new releases for your country
         ]]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(status), let json = try? JSONSerialization.jsonObject(with: data) else {
-            throw SourceError(errorDescription: "YouTube Music search didn’t work (HTTP \(status)). Try again in a moment.")
+            throw SourceError(errorDescription: "YouTube Music didn’t respond (HTTP \(status)). Try again in a moment.")
         }
         // Downloads without a visitor ID hit YouTube's bot check, reported as "Login is required".
         // Keep the first one so searches stay consistent.
@@ -418,12 +409,15 @@ enum YouTubeSource {
     }
 
     // A song row has the title in its first column and "Artist • Album • 3:16" in its second.
-    private static func parseSong(_ item: Any) -> SongResult? {
+    // Album rows have no artist column, so only the title column is required.
+    static func parseSong(_ item: Any) -> SongResult? {
         guard let renderer = dig(item, "musicResponsiveListItemRenderer"),
-              let columns = dig(renderer, "flexColumns") as? [Any], columns.count >= 2
+              let columns = dig(renderer, "flexColumns") as? [Any], !columns.isEmpty
         else { return nil }
         let titleRuns = dig(columns[0], "musicResponsiveListItemFlexColumnRenderer", "text", "runs") as? [Any] ?? []
-        let detailRuns = dig(columns[1], "musicResponsiveListItemFlexColumnRenderer", "text", "runs") as? [Any] ?? []
+        let detailRuns = columns.count > 1
+            ? dig(columns[1], "musicResponsiveListItemFlexColumnRenderer", "text", "runs") as? [Any] ?? []
+            : []
         guard let title = dig(titleRuns.first, "text") as? String,
               let videoID = (dig(renderer, "playlistItemData", "videoId")
                   ?? dig(titleRuns.first, "navigationEndpoint", "watchEndpoint", "videoId")) as? String
@@ -444,23 +438,34 @@ enum YouTubeSource {
                 artists.append(text)
             }
         }
-        // Thumbnails are 120px; the same image is served larger by changing its size suffix.
+        // Playlist rows keep the length in a separate column.
+        let fixedColumns = dig(renderer, "fixedColumns") as? [Any]
+        duration = duration ?? text(dig(fixedColumns?.first, "musicResponsiveListItemFixedColumnRenderer", "text"))
         let thumbnails = dig(renderer, "thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails") as? [Any]
         let thumbnail = dig(thumbnails?.last, "url") as? String
-        let artworkURL = thumbnail.flatMap {
-            URL(string: $0.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression))
-        }
         return SongResult(
             id: videoID,
             title: title,
             artist: artists.isEmpty ? nil : artists.joined(separator: ", "),
             duration: duration,
             thumbnailURL: thumbnail.flatMap { URL(string: $0) },
-            artworkURL: artworkURL
+            artworkURL: thumbnail.flatMap(largeArtwork)
         )
     }
 
-    private static func dig(_ value: Any?, _ keys: String...) -> Any? {
+    // Thumbnails are about 120px; the same image is served larger by changing its size suffix.
+    static func largeArtwork(_ thumbnail: String) -> URL? {
+        URL(string: thumbnail.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression))
+    }
+
+    // The visible text of a YouTube Music text object, which is split into runs.
+    static func text(_ value: Any?) -> String? {
+        let runs = dig(value, "runs") as? [Any] ?? []
+        let joined = runs.compactMap { dig($0, "text") as? String }.joined()
+        return joined.isEmpty ? nil : joined
+    }
+
+    static func dig(_ value: Any?, _ keys: String...) -> Any? {
         keys.reduce(value) { ($0 as? [String: Any])?[$1] }
     }
 

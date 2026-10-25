@@ -1,13 +1,26 @@
 import Foundation
 import SwiftData
 
-// Song actions shared by the library, playlist, and player screens.
+// Song actions shared by every tab.
 @MainActor
 final class LibraryStore: ObservableObject {
     let player = LocalPlayer()
+    let preview = PreviewPlayer()
+    // One download at a time: a library song being downloaded again, or a YouTube Music song.
     @Published private(set) var downloadingTrackID: UUID?
+    @Published private(set) var downloadingSongID: String?
     @Published private(set) var downloadProgress: Double?
     @Published var errorMessage: String?
+
+    var isDownloading: Bool { downloadingTrackID != nil || downloadingSongID != nil }
+
+    // Record finished plays as listening history.
+    func attach(_ context: ModelContext) {
+        player.onListen = { listen in
+            context.insert(ListenEvent(listen))
+            try? context.save()
+        }
+    }
 
     func add(_ saved: SavedAudio, in context: ModelContext) throws {
         let track = Track(title: saved.title, artist: saved.artist, filename: saved.filename, youtubeID: saved.youtubeID)
@@ -24,9 +37,11 @@ final class LibraryStore: ObservableObject {
     }
 
     // Play a downloaded track with the rest of its list queued, or download it again.
-    func select(_ track: Track, in list: [Track], context: ModelContext) {
+    // `source` records where it was played from, for listening history.
+    func select(_ track: Track, in list: [Track], from source: String, context: ModelContext) {
         if track.isDownloaded {
-            player.play(track, in: list.filter { $0.isDownloaded })
+            preview.stop()
+            player.play(track, in: list.filter { $0.isDownloaded }, from: source)
         } else {
             redownload(track, in: context)
         }
@@ -96,8 +111,36 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    // Pause library playback so a preview isn't mixed with it.
+    func togglePreview(_ song: SongResult) {
+        if preview.songID != song.id && player.isPlaying {
+            player.pause()
+        }
+        preview.toggle(song)
+    }
+
+    // Download a YouTube Music song into the library.
+    func download(_ song: SongResult, in context: ModelContext) {
+        guard !isDownloading else { return }
+        downloadingSongID = song.id
+        downloadProgress = nil
+        Task { @MainActor in
+            defer { downloadingSongID = nil }
+            do {
+                let saved = try await YouTubeSource.download(
+                    videoID: song.id, title: song.title, artist: song.artist, artworkURL: song.artworkURL
+                ) { value in
+                    Task { @MainActor in self.downloadProgress = value }
+                }
+                try add(saved, in: context)
+            } catch {
+                errorMessage = YouTubeSource.describe(error)
+            }
+        }
+    }
+
     func redownload(_ track: Track, in context: ModelContext) {
-        guard let videoID = track.youtubeID, downloadingTrackID == nil else { return }
+        guard let videoID = track.youtubeID, !isDownloading else { return }
         downloadingTrackID = track.id
         downloadProgress = nil
         Task { @MainActor in

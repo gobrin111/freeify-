@@ -6,13 +6,13 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Track.addedAt, order: .reverse) private var tracks: [Track]
-    @StateObject private var store = LibraryStore()
+    @EnvironmentObject private var store: LibraryStore
     @State private var showingImporter = false
-    @State private var showingYouTube = false
     @State private var isImporting = false
     @State private var importError: String?
     @State private var tracksToRemove: [Track] = []
     @State private var tracksToAdd: [Track] = []
+    @State private var radioSeed: SongResult?
     @State private var searchText = ""
     @State private var editMode = EditMode.inactive
     @State private var selection = Set<UUID>()
@@ -46,7 +46,7 @@ struct LibraryView: View {
                     ContentUnavailableView {
                         Label("Your offline library", systemImage: "music.note.list")
                     } description: {
-                        Text("Search YouTube Music or add songs from Files to save a copy in Freeify.")
+                        Text("Download songs from the Search or Discover tabs, or add songs from Files.")
                     } actions: {
                         importButton
                             .buttonStyle(.borderedProminent)
@@ -61,7 +61,7 @@ struct LibraryView: View {
                     songList
                 }
             }
-            .navigationTitle("Freeify")
+            .navigationTitle("Library")
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
@@ -69,10 +69,8 @@ struct LibraryView: View {
             )
             .toolbar { toolbar }
             .environment(\.editMode, $editMode)
-            .sheet(isPresented: $showingYouTube) {
-                YouTubeSearchView(libraryIDs: Set(tracks.compactMap { $0.youtubeID })) { saved in
-                    try store.add(saved, in: modelContext)
-                }
+            .navigationDestination(item: $radioSeed) { seed in
+                RadioView(seed: seed)
             }
             .sheet(isPresented: Binding(
                 get: { !tracksToAdd.isEmpty },
@@ -125,31 +123,10 @@ struct LibraryView: View {
             } message: {
                 Text("This deletes the audio too. YouTube Music songs can be found again in search; songs added from Files must be added again.")
             }
-            .alert("Couldn’t update library", isPresented: Binding(
-                get: { store.errorMessage != nil },
-                set: { if !$0 { store.errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { store.errorMessage = nil }
-            } message: {
-                Text(store.errorMessage ?? "")
-            }
             .task(id: tracks.map { "\($0.filename)\($0.isDownloaded)" }) {
                 storageBytes = AudioFiles.usedBytes()
             }
-            .task {
-                // Reopen where playback left off, paused.
-                guard store.player.current == nil,
-                      let id = store.player.savedTrackID,
-                      let track = tracks.first(where: { $0.id == id && $0.isDownloaded })
-                else { return }
-                store.player.restore(track, in: filteredTracks.filter { $0.isDownloaded })
-            }
         }
-        .safeAreaInset(edge: .bottom) { PlayerBar() }
-        .modifier(PlayerErrorAlert())
-        .environmentObject(store)
-        .environmentObject(store.player)
-        .tint(.mint)
     }
 
     private var songList: some View {
@@ -175,7 +152,7 @@ struct LibraryView: View {
                             TrackRow(track: track)
                         } else {
                             Button {
-                                store.select(track, in: filteredTracks, context: modelContext)
+                                store.select(track, in: filteredTracks, from: "library", context: modelContext)
                             } label: {
                                 TrackRow(track: track)
                             }
@@ -194,6 +171,14 @@ struct LibraryView: View {
                             tracksToAdd = [track]
                         } label: {
                             Label("Add to Playlist", systemImage: "text.badge.plus")
+                        }
+                        if let videoID = track.youtubeID {
+                            Button {
+                                radioSeed = SongResult(id: videoID, title: track.title, artist: track.artist,
+                                                       duration: nil, thumbnailURL: nil, artworkURL: nil)
+                            } label: {
+                                Label("Start Radio", systemImage: "dot.radiowaves.left.and.right")
+                            }
                         }
                     }
                     // Swipe buttons are text-only: iOS hides the text of icon-and-text buttons on
@@ -236,30 +221,19 @@ struct LibraryView: View {
                 }
                 .disabled(selection.isEmpty)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    tracksToAdd = tracks.filter { selection.contains($0.id) }
+                } label: {
+                    Label("Add to Playlist", systemImage: "text.badge.plus")
+                }
+                .disabled(selection.isEmpty)
                 Button("Done") {
                     selection = []
                     editMode = .inactive
                 }
             }
-            ToolbarItem(placement: .bottomBar) {
-                Button {
-                    tracksToAdd = tracks.filter { selection.contains($0.id) }
-                } label: {
-                    Label("Add to Playlist", systemImage: "text.badge.plus")
-                        .labelStyle(.titleAndIcon)
-                }
-                .disabled(selection.isEmpty)
-            }
         } else {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    showingYouTube = true
-                } label: {
-                    Label("Search YouTube Music", systemImage: "globe")
-                }
-                .disabled(isImporting)
-            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 importButton
                 Menu {
@@ -308,20 +282,4 @@ struct LibraryView: View {
 
 enum LibrarySort: String {
     case recentlyAdded, title, artist
-}
-
-// Playback errors, shown wherever the player is used.
-private struct PlayerErrorAlert: ViewModifier {
-    @EnvironmentObject private var player: LocalPlayer
-
-    func body(content: Content) -> some View {
-        content.alert("Couldn’t play audio", isPresented: Binding(
-            get: { player.errorMessage != nil },
-            set: { if !$0 { player.errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { player.errorMessage = nil }
-        } message: {
-            Text(player.errorMessage ?? "")
-        }
-    }
 }

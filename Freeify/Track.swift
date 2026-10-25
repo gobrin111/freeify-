@@ -50,6 +50,32 @@ final class Playlist {
     }
 }
 
+// One play of a song. Details are copied so history stays meaningful after a song is removed.
+@Model
+final class ListenEvent {
+    var trackID: UUID
+    var youtubeID: String?
+    var title: String
+    var artist: String?
+    var startedAt: Date
+    var secondsListened: Double
+    var duration: Double
+    var finished: Bool
+    var source: String
+
+    init(_ listen: Listen) {
+        trackID = listen.trackID
+        youtubeID = listen.youtubeID
+        title = listen.title
+        artist = listen.artist
+        startedAt = listen.startedAt
+        secondsListened = listen.seconds
+        duration = listen.duration
+        finished = listen.finished
+        source = listen.source
+    }
+}
+
 // A saved audio file and what is known about it, before it becomes a Track.
 struct SavedAudio: Sendable {
     var title: String

@@ -268,3 +268,29 @@ private struct QueueRow: View {
         }
     }
 }
+
+// Playback and preview errors, shown on every tab.
+struct PlaybackErrorAlerts: ViewModifier {
+    @EnvironmentObject private var player: LocalPlayer
+    @EnvironmentObject private var preview: PreviewPlayer
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Couldn’t play audio", isPresented: Binding(
+                get: { player.errorMessage != nil },
+                set: { if !$0 { player.errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { player.errorMessage = nil }
+            } message: {
+                Text(player.errorMessage ?? "")
+            }
+            .alert("Couldn’t preview song", isPresented: Binding(
+                get: { preview.errorMessage != nil },
+                set: { if !$0 { preview.errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { preview.errorMessage = nil }
+            } message: {
+                Text(preview.errorMessage ?? "")
+            }
+    }
+}
