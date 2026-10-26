@@ -203,6 +203,7 @@ private struct RemoteSongRow: View {
     @EnvironmentObject private var store: LibraryStore
     @EnvironmentObject private var preview: PreviewPlayer
     @EnvironmentObject private var player: LocalPlayer
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isCurrent: Bool { play != nil && player.current?.youtubeID == song.id }
 
@@ -234,8 +235,11 @@ private struct RemoteSongRow: View {
                     )
                 } else if inLibrary {
                     StatusChip(label: "Saved", systemImage: "checkmark", kind: .saved)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
             }
+            // One quick check transition when a download completes; none with Reduce Motion.
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: inLibrary)
             Spacer(minLength: Spacing.s)
             if isCurrent {
                 PlayingIndicator(isPlaying: player.isPlaying)
@@ -640,17 +644,18 @@ enum YouTubeSource {
         if let length = format.contentLength {
             request.setValue("bytes=0-\(length)", forHTTPHeaderField: "Range")
         }
-        let (temporary, response) = try await URLSession.shared.download(
-            for: request,
-            delegate: ProgressDelegate(expectedBytes: format.contentLength, onProgress: onProgress)
-        )
+        // Read the audio as it arrives and count the bytes, so the progress bar moves during
+        // the download rather than jumping from 0% to done.
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200...299).contains(status) else {
-            try? FileManager.default.removeItem(at: temporary)
+            bytes.task.cancel()
             throw SourceError(errorDescription: status == 403
                 ? "YouTube refused the download (HTTP 403). YouTube may have changed how downloads work, so Freeify may need an update."
                 : "The download failed (HTTP \(status)). Try again.")
         }
+        let expected = format.contentLength.map { Int64($0) } ?? response.expectedContentLength
+        let temporary = try await receive(bytes, expectedBytes: expected, onProgress: onProgress)
 
         let name = title.map { (title: $0, artist: artist) } ?? SongName.parse(
             infos.videoInfos.title ?? "Untitled",
@@ -666,28 +671,48 @@ enum YouTubeSource {
         }
     }
 
-    // Reports download progress in whole-percent steps.
-    private final class ProgressDelegate: NSObject, URLSessionTaskDelegate {
-        let expectedBytes: Int?
-        let onProgress: @Sendable (Double) -> Void
-        private var observation: NSKeyValueObservation?
-        private var lastPercent = -1
-
-        init(expectedBytes: Int?, onProgress: @escaping @Sendable (Double) -> Void) {
-            self.expectedBytes = expectedBytes
-            self.onProgress = onProgress
-        }
-
-        func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-            observation = task.progress.observe(\.completedUnitCount) { [weak self] progress, _ in
-                guard let self else { return }
-                let total = self.expectedBytes.map { Int64($0) } ?? progress.totalUnitCount
-                guard total > 0 else { return }
-                let percent = Int(min(Double(progress.completedUnitCount) / Double(total), 1) * 100)
-                guard percent != self.lastPercent else { return }
-                self.lastPercent = percent
-                self.onProgress(Double(percent) / 100)
+    // Writes a download to a temporary file in 64 KB pieces, reporting whole-percent steps.
+    private static func receive(
+        _ bytes: URLSession.AsyncBytes,
+        expectedBytes: Int64,
+        onProgress: @escaping @Sendable (Double) -> Void
+    ) async throws -> URL {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("m4a")
+        FileManager.default.createFile(atPath: temporary.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: temporary)
+        do {
+            let pieceSize = 64 * 1024
+            var piece = Data(capacity: pieceSize)
+            var received: Int64 = 0
+            var lastPercent = -1
+            func flush() throws {
+                try handle.write(contentsOf: piece)
+                received += Int64(piece.count)
+                piece.removeAll(keepingCapacity: true)
+                guard expectedBytes > 0 else { return }
+                let percent = Int(min(Double(received) / Double(expectedBytes), 1) * 100)
+                if percent != lastPercent {
+                    lastPercent = percent
+                    onProgress(Double(percent) / 100)
+                }
             }
+            for try await byte in bytes {
+                piece.append(byte)
+                if piece.count >= pieceSize {
+                    try Task.checkCancellation()
+                    try flush()
+                }
+            }
+            try flush()
+            try handle.close()
+            return temporary
+        } catch {
+            bytes.task.cancel()
+            try? handle.close()
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
         }
     }
 

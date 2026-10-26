@@ -135,6 +135,8 @@ weeks of 5.4 feedback.
 - [ ] 🔨 Dark theme from DESIGN.md tokens: pink for selection and favorites, orange for play and primary actions, cyan for playing and progress, pale green for saved
 - [ ] 🔨 Character motifs: hair slash on section titles, armor-cut corner on primary buttons and mix covers, octagonal play button, armor brackets around Now Playing art
 - [ ] 🔨 Song rows: 48 pt covers, playing marker and indicator, status chips, and a More button on every row
+- [ ] 🔨 Motion: a one-time "Saved" check and light tap when a download completes, 180 ms fades for the current song and shuffle/repeat; all static with Reduce Motion
+- [ ] 🔨 Optional motifs: loose arc and stepped zigzag line in the empty-library illustration
 - [ ] 🔨 Mini player, Now Playing, queue, and Discover restyled; Library is the landing tab; Settings tab with storage and About
 - [ ] Check on the phone: 320/390/430 pt widths, large text, VoiceOver, Reduce Motion
 

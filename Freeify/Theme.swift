@@ -75,10 +75,26 @@ struct HairSlash: View {
     var height: CGFloat = 18
 
     var body: some View {
-        SVGShape(path: "M14 3 L19 3 L10 21 L7 21 Z", viewBox: 24)
+        HairSlashShape()
             .fill(Palette.hair)
-            .frame(width: height * 0.6, height: height)
+            .frame(width: height * 2 / 3, height: height)
             .accessibilityHidden(true)
+    }
+}
+
+// The spec's slash, M14 3 L19 3 L10 21 L7 21 Z, fitted to its own 12 × 18 bounds.
+struct HairSlashShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + rect.width * x / 12, y: rect.minY + rect.height * y / 18)
+        }
+        var path = Path()
+        path.move(to: point(7, 0))
+        path.addLine(to: point(12, 0))
+        path.addLine(to: point(3, 18))
+        path.addLine(to: point(0, 18))
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -109,6 +125,45 @@ struct ArmorBrackets: View {
         SVGShape(path: "M0 14 L0 0 L14 0", viewBox: 14)
             .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .square, lineJoin: .bevel))
             .frame(width: 14, height: 14)
+    }
+}
+
+// The empty-state illustration: an armor panel with the hair slash, the loose arc of the
+// narrow strand above the hair, and the stepped zigzag strand. Empty states only, never
+// as a text underline.
+struct EmptyStateMark: View {
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ArmorPanelShape(cut: 12)
+                .stroke(Palette.borderControl, lineWidth: 2)
+                .frame(width: 80, height: 80)
+                .offset(x: 30, y: 22)
+            HairSlash(height: 40)
+                .offset(x: 101, y: 12)
+            LooseArc()
+                .stroke(Palette.hair, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .frame(width: 70, height: 20)
+                .offset(x: 24, y: 0)
+            SVGShape(path: "M0 6 L6 6 L6 0 L12 0 L12 6 L18 6 L18 0 L24 0", viewBox: 24)
+                .stroke(Palette.borderControl, style: StrokeStyle(lineWidth: 2, lineJoin: .bevel))
+                .frame(width: 24, height: 24)
+                .offset(x: 0, y: 82)
+        }
+        .frame(width: 135, height: 110, alignment: .topLeading)
+        .accessibilityHidden(true)
+    }
+}
+
+// A single loose arc, rising left to right.
+struct LooseArc: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.35),
+            control: CGPoint(x: rect.width * 0.35, y: rect.minY - rect.height * 0.6)
+        )
+        return path
     }
 }
 

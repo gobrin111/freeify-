@@ -265,17 +265,10 @@ struct LibraryView: View {
         .accessibilityLabel("Sort by \(sort.label)")
     }
 
-    // First run: a small original armor-and-slash mark, a plain promise, and the way in.
+    // First run: a small original mark, a plain promise, and the way in.
     private var emptyLibrary: some View {
         VStack(spacing: Spacing.l) {
-            ZStack(alignment: .topTrailing) {
-                ArmorPanelShape(cut: 12)
-                    .stroke(Palette.borderControl, lineWidth: 2)
-                    .frame(width: 80, height: 80)
-                HairSlash(height: 40)
-                    .offset(x: 10, y: -14)
-            }
-            .accessibilityHidden(true)
+            EmptyStateMark()
             Text("Your music, ready offline")
                 .font(.title2.bold())
                 .foregroundStyle(Palette.textPrimary)

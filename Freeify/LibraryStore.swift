@@ -37,6 +37,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var downloadingSongID: String?
     @Published private(set) var downloadProgress: Double?
     @Published private(set) var bulkDownload: BulkDownload?
+    // A song that just finished downloading (its video ID), shown as "Saved" for a moment.
+    @Published private(set) var recentlySavedID: String?
     @Published var errorMessage: String?
     // Navigation, so the player can open the list a song is playing from.
     @Published var selectedTab = AppTab.library
@@ -144,6 +146,7 @@ final class LibraryStore: ObservableObject {
             }
             UIApplication.shared.isIdleTimerDisabled = false
             bulkDownload = nil
+            if failed < missing.count { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
             if failed > 0 {
                 errorMessage = "\(failed) \(failed == 1 ? "song" : "songs") couldn’t be downloaded. They’re in the “\(name)” playlist as Not downloaded; tap one, or use Download Missing in the playlist, to try again."
             }
@@ -278,6 +281,17 @@ final class LibraryStore: ObservableObject {
             Task { @MainActor in self.downloadProgress = value }
         }
         try add(saved, in: context)
+        markSaved(song.id)
+    }
+
+    // Show "Saved" briefly, with a light tap. Download All taps once when it finishes instead.
+    private func markSaved(_ videoID: String) {
+        recentlySavedID = videoID
+        if bulkDownload == nil { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            if recentlySavedID == videoID { recentlySavedID = nil }
+        }
     }
 
     func redownload(_ track: Track, in context: ModelContext) {
@@ -329,5 +343,6 @@ final class LibraryStore: ObservableObject {
             try? FileManager.default.removeItem(at: AudioFiles.directory.appendingPathComponent(saved.filename))
             throw error
         }
+        markSaved(videoID)
     }
 }

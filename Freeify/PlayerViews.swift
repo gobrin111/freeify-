@@ -377,6 +377,7 @@ struct PlaybackPosition: View {
 // Shuffle · previous · octagonal play/pause · next · repeat.
 struct PlaybackButtons: View {
     @EnvironmentObject private var player: LocalPlayer
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack {
@@ -430,8 +431,10 @@ struct PlaybackButtons: View {
             }
             .foregroundStyle(isOn ? Palette.hair : Palette.textSecondary)
             .frame(width: Spacing.target, height: Spacing.target)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isOn)
         }
         .accessibilityLabel(label)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     private var repeatLabel: String {

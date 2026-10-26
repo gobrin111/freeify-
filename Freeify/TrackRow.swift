@@ -8,6 +8,7 @@ struct TrackListRow<MenuItems: View>: View {
     let onPlay: () -> Void
     @ViewBuilder let menu: MenuItems
     @EnvironmentObject private var player: LocalPlayer
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 0) {
@@ -31,6 +32,7 @@ struct TrackListRow<MenuItems: View>: View {
             }
         }
         .themedRow(current: player.trackID == track.id)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: player.trackID == track.id)
         .contextMenu { menu }
     }
 }
@@ -40,6 +42,7 @@ struct TrackRow: View {
     let track: Track
     @EnvironmentObject private var player: LocalPlayer
     @EnvironmentObject private var store: LibraryStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let isCurrent = player.trackID == track.id
@@ -64,8 +67,13 @@ struct TrackRow: View {
                     )
                 } else if !track.isDownloaded {
                     StatusChip(label: "Not downloaded", systemImage: "icloud.slash")
+                } else if let videoID = track.youtubeID, store.recentlySavedID == videoID {
+                    StatusChip(label: "Saved", systemImage: "checkmark", kind: .saved)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
             }
+            // One quick check transition when a download completes; none with Reduce Motion.
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: store.recentlySavedID)
             Spacer(minLength: Spacing.s)
             if track.likedAt != nil {
                 Image(systemName: "heart.fill")
