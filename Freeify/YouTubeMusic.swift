@@ -105,17 +105,36 @@ extension YouTubeSource {
     private static func parseRadioSong(_ item: Any) -> SongResult? {
         guard let videoID = dig(item, "videoId") as? String, let title = text(dig(item, "title")) else { return nil }
         // Bylines read "Artist • Album • Year" or "Artist • 3.1B views • 18M likes".
-        let artist = text(dig(item, "longBylineText"))?.components(separatedBy: " • ").first
+        let byline = text(dig(item, "longBylineText"))?.components(separatedBy: " • ") ?? []
+        let year = byline.dropFirst().compactMap { $0.count == 4 ? Int($0) : nil }.first
+        let plays = byline.dropFirst().compactMap(playCount).first
         let thumbnails = dig(item, "thumbnail", "thumbnails") as? [Any]
         let thumbnail = dig(thumbnails?.last, "url") as? String
         return SongResult(
             id: videoID,
             title: title,
-            artist: artist,
+            artist: byline.first,
             duration: text(dig(item, "lengthText")),
             thumbnailURL: thumbnail.flatMap { URL(string: $0) },
-            artworkURL: nil // downloads fall back to the video thumbnail
+            artworkURL: nil, // downloads fall back to the video thumbnail
+            year: year,
+            plays: plays
         )
+    }
+
+    // "3.1B views", "820K plays", or "1,234 views" as a number.
+    private static func playCount(_ text: String) -> Double? {
+        let parts = text.split(separator: " ")
+        guard parts.count == 2, parts[1] == "views" || parts[1] == "plays", var number = parts.first else { return nil }
+        let scale: Double
+        switch number.last {
+        case "K": scale = 1e3
+        case "M": scale = 1e6
+        case "B": scale = 1e9
+        default: scale = 1
+        }
+        if scale > 1 { number = number.dropLast() }
+        return Double(number.replacingOccurrences(of: ",", with: "")).map { $0 * scale }
     }
 
     // Every value stored under `key`, anywhere in a JSON page, in page order.

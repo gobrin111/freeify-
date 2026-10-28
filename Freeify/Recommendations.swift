@@ -71,35 +71,65 @@ struct Candidate {
     var bestPosition: Int // its highest place in any radio, 0 = first
 }
 
-// Rule-based ranking. Milestone 6's model replaces `score` and keeps the same features,
-// which are saved with every recommendation event for training.
+// Ranks candidates with the hand-set or learned weights (Ranker.swift). Every song's
+// features are saved with its recommendation events, for training.
 enum Recommender {
-    // [artist affinity, number of seeds that suggested it, radio position from 1 (top) to 0]
     static func features(for candidate: Candidate, profile: TasteProfile) -> [Double] {
-        [
-            profile.affinity(for: candidate.song.artist),
-            Double(candidate.seedIDs.count),
-            1 - Double(min(candidate.bestPosition, 50)) / 50
-        ]
+        var features = [Double](repeating: 0, count: RankingFeature.count)
+        features[RankingFeature.affinity] = profile.affinity(for: candidate.song.artist)
+        features[RankingFeature.seeds] = Double(candidate.seedIDs.count)
+        features[RankingFeature.radioPosition] = 1 - Double(min(candidate.bestPosition, 50)) / 50
+        let song = candidate.song
+        if let text = song.duration {
+            let seconds = text.split(separator: ":").reduce(0) { $0 * 60 + (Double($1) ?? 0) }
+            features[RankingFeature.length] = min(max((seconds / 60 - 4) / 2, -2), 2)
+        } else {
+            features[RankingFeature.lengthMissing] = 1
+        }
+        if let year = song.year {
+            let thisYear = Calendar.current.component(.year, from: .now)
+            features[RankingFeature.age] = min(max(Double(thisYear - year) / 10, 0), 5)
+        } else {
+            features[RankingFeature.ageMissing] = 1
+        }
+        if let plays = song.plays, plays > 0 {
+            features[RankingFeature.popularity] = min(max(log10(plays) - 7, -4), 3)
+        } else {
+            features[RankingFeature.popularityMissing] = 1
+        }
+        return features
     }
 
-    static func score(_ features: [Double]) -> Double {
-        1.0 * features[0] + 0.6 * (features[1] - 1) + 0.4 * features[2]
-    }
-
-    // Highest scores first, with at most `perArtist` songs per artist.
-    static func rank(_ candidates: [Candidate], profile: TasteProfile, limit: Int, perArtist: Int = 2) -> [(SongResult, [Double])] {
+    // Highest scores first, with at most `perArtist` songs per artist. `explore` slots go to
+    // random lower-ranked songs placed anywhere in the mix, so the ranker keeps seeing songs
+    // it wouldn't pick and doesn't narrow into a rut.
+    static func rank(
+        _ candidates: [Candidate],
+        profile: TasteProfile,
+        weights: RankerWeights,
+        limit: Int,
+        perArtist: Int = 2,
+        explore: Int = 2
+    ) -> [(SongResult, [Double])] {
         var perArtistCount: [String: Int] = [:]
-        return candidates
+        let ranked = candidates
             .map { ($0.song, features(for: $0, profile: profile)) }
-            .sorted { score($0.1) > score($1.1) }
+            .sorted { weights.score($0.1) > weights.score($1.1) }
             .filter { song, _ in
                 let key = TasteProfile.artistKey(song.artist) ?? song.id
                 perArtistCount[key, default: 0] += 1
                 return perArtistCount[key, default: 0] <= perArtist
             }
-            .prefix(limit)
-            .map { $0 }
+        let explored = min(explore, max(ranked.count - (limit - explore), 0))
+        var mix = Array(ranked.prefix(limit - explored))
+        for var pick in ranked.dropFirst(limit - explored).shuffled().prefix(explored) {
+            pick.1[RankingFeature.explored] = 1
+            mix.insert(pick, at: Int.random(in: 0...mix.count))
+        }
+        for index in mix.indices {
+            mix[index].1[RankingFeature.mixPosition] = mix.count > 1 ? Double(index) / Double(mix.count - 1) : 0
+        }
+        return mix
     }
 }
 
@@ -111,7 +141,7 @@ struct Mix: Identifiable, Hashable, Codable {
     let features: [[Double]] // one per song, for feedback
 }
 
-// One thing you did with a recommendation. Training data for milestone 6's model.
+// One thing you did with a recommendation. Training data for the learned ranker.
 @Model
 final class RecommendationEvent {
     var youtubeID: String
@@ -176,6 +206,7 @@ enum MadeForYou {
         )).map { $0.youtubeID })
 
         let profile = TasteProfile(listens: listens, tracks: tracks)
+        let weights = Ranker.update(in: context, today: today)
         let seeds = profile.seeds(count: seedCount, day: today)
         guard !seeds.isEmpty else { return [] }
 
@@ -200,7 +231,9 @@ enum MadeForYou {
 
         var mixes: [Mix] = []
         for (seed, _) in radios {
-            let ranked = Recommender.rank(candidates.values.filter { $0.seedIDs.contains(seed.id) }, profile: profile, limit: 20)
+            let ranked = Recommender.rank(
+                candidates.values.filter { $0.seedIDs.contains(seed.id) }, profile: profile, weights: weights, limit: 20
+            )
             guard !ranked.isEmpty else { continue }
             mixes.append(Mix(
                 id: "seed-\(seed.id)",
@@ -213,7 +246,7 @@ enum MadeForYou {
         // Discover mix: artists you don't have yet.
         let knownArtists = Set(tracks.compactMap { TasteProfile.artistKey($0.artist) })
         let fresh = candidates.values.filter { TasteProfile.artistKey($0.song.artist).map { !knownArtists.contains($0) } ?? true }
-        let discover = Recommender.rank(Array(fresh), profile: profile, limit: 25, perArtist: 1)
+        let discover = Recommender.rank(Array(fresh), profile: profile, weights: weights, limit: 25, perArtist: 1, explore: 3)
         if !discover.isEmpty {
             mixes.append(Mix(
                 id: "discover",

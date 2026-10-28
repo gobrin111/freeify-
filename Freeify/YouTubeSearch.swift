@@ -383,6 +383,8 @@ struct SongResult: Identifiable, Hashable, Codable, Sendable {
     let duration: String?
     let thumbnailURL: URL? // small, for search rows
     let artworkURL: URL? // large, saved with downloads
+    var year: Int? = nil // release year and YouTube plays, where a radio lists them
+    var plays: Double? = nil
 }
 
 struct SongPage: Sendable {

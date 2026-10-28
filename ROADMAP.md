@@ -120,22 +120,53 @@ page change breaks only that row. History and feedback never leave the phone.
 **Done when:** Discover shows personal mixes that change with what you play, and
 feedback is being recorded for milestone 6.
 
-## 6. Lightweight recommendation model (later)
+## 6. Learned recommendation ranker
 
-Replaces only 5.4's ranker. It keeps the same inputs (taste profile, candidates,
-feedback) and output (ranked songs), so nothing earlier changes. Start after a few
-weeks of 5.4 feedback.
+Replaces only the `score` step of 5.4's ranker with a logistic regression learned from
+your own feedback. Candidates still come from YouTube Music song radios, and everything
+else in 5.4 (seeds, exclusions, at most 2 songs per artist, daily refresh) stays the
+same. Training and scoring run on the phone in plain Swift: no libraries, no server,
+and nothing new leaves the phone.
 
-- [ ] Small learned ranker (logistic regression, kilobytes) trained on the phone from 5.4's feedback, using features like artist affinity, seed count, popularity, and length
-- [ ] Optional: audio "sounds like" similarity (YAMNet or MusiCNN in Core ML, 3–15 MB) comparing candidates with downloaded songs. Candidates need a short streamed clip, which uses data
-- [ ] Optional: genre tags (MusicBrainz lookup, or a model) for genre filter chips in the library and as a ranking feature
+### 6.1 Record more features (start first, so data builds up)
+
+- [ ] 🔨 Save more features with every recommendation event: song length, plus release year and YouTube play count where the song radio lists them, each scaled to a similar range, with a "missing" flag when a value isn't listed
+- [ ] 🔨 Save each song's position in its mix, since songs near the top get more taps just for being there
+- [ ] 🔨 Older events without the new features still train the weights they have
+
+### 6.2 Labels
+
+- [ ] 🔨 Liked or downloaded = yes (1); previewed = weak yes (1, half weight); "Not interested" = no (0); shown in a mix but never acted on by the next refresh = weak no (0, low weight)
+
+### 6.3 The model
+
+- [ ] 🔨 Logistic regression: chance you want a song = sigmoid(weights · features + bias); mixes are sorted by that chance, keeping the per-artist limits
+- [ ] 🔨 Trained by gradient descent when the mixes refresh, with a penalty that keeps the weights close to today's hand-set ones (1.0, 0.6, 0.4), so with little data it behaves like 5.4 and moves only as evidence builds up
+- [ ] 🔨 The learned weights are saved on the phone and survive restarts
+
+### 6.4 Safety checks
+
+- [ ] 🔨 Test on the newest 20% of events, which training never sees: use the learned weights only if they rank your yeses above your nos better than the hand-set weights do; otherwise keep the hand-set ones
+- [ ] 🔨 Wait for enough data before switching on: at least ~200 events with ~30 yeses
+- [ ] 🔨 Exploration: 2–3 slots per mix go to lower-ranked candidates, so the model doesn't narrow into a rut, and these slots are marked in the events
+- [ ] 🔨 Settings shows the ranker in use (hand-set or learned), how many events it has learned from, and each weight in plain words, e.g. "Artist familiarity: 0.4 (was 1.0)", with a "Learn from my feedback" switch to go back to the hand-set weights
+
+**Done when:** after a few weeks of real use, the learned ranker beats the hand-set
+weights on the held-back events and runs the mixes, and Settings shows what it learned.
+
+### 6.5 Understand the sound (after 6.1–6.4 work on the phone)
+
+- [ ] Choose a small on-device audio model (e.g. one of Essentia's genre and mood models converted to Core ML) and check its size and speed on the phone
+- [ ] Analyze saved songs once, in the background, and store their genre, mood, and energy
+- [ ] Add "sounds like your saved songs" as a ranking feature for 6.3; candidates need a short streamed clip, which uses data
+- [ ] Genre filter chips in the library from the same tags
 
 ## 7. Design (DESIGN.md)
 
 - [ ] 🔨 Dark theme from DESIGN.md tokens: pink for selection and favorites, orange for play and primary actions, cyan for playing and progress, pale green for saved
 - [ ] 🔨 Character motifs: hair slash on section titles, armor-cut corner on primary buttons and mix covers, octagonal play button, armor brackets around Now Playing art
 - [ ] 🔨 Song rows: 48 pt covers, playing marker and indicator, status chips, and a More button on every row
-- [ ] 🔨 Motion: a one-time "Saved" check and light tap when a download completes, 180 ms fades for the current song and shuffle/repeat; all static with Reduce Motion
+- [x] Motion: a one-time "Saved" check and light tap when a download completes, 180 ms fades for the current song and shuffle/repeat; all static with Reduce Motion
 - [ ] 🔨 Optional motifs: loose arc and stepped zigzag line in the empty-library illustration
 - [ ] 🔨 Mini player, Now Playing, queue, and Discover restyled; Library is the landing tab; Settings tab with storage and About
 - [ ] Check on the phone: 320/390/430 pt widths, large text, VoiceOver, Reduce Motion
@@ -152,3 +183,4 @@ weeks of 5.4 feedback.
 - Scanning the phone's files or asking for access to the Apple Music library
 - More build or install automation, unless requested
 - Crossfade/gapless playback and playlist folders
+- Last.fm or other outside recommendation services

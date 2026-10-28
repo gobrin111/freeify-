@@ -6,6 +6,8 @@ struct SettingsView: View {
     @Query private var tracks: [Track]
     @Query private var playlists: [Playlist]
     @State private var storageBytes: Int64 = 0
+    @State private var ranker = Ranker.loadStatus()
+    @AppStorage(Ranker.enabledKey) private var learnedRanker = true
 
     private var savedCount: Int { tracks.filter { $0.isDownloaded }.count }
     private var version: String {
@@ -31,6 +33,7 @@ struct SettingsView: View {
                     Text("Saved songs play without internet. Searching and new downloads need a connection.")
                         .foregroundStyle(Palette.textMuted)
                 }
+                recommendationsSection
                 Section {
                     HStack(spacing: Spacing.l) {
                         Image("Logo")
@@ -63,7 +66,46 @@ struct SettingsView: View {
             .task(id: tracks.map { "\($0.filename)\($0.isDownloaded)" }) {
                 storageBytes = AudioFiles.usedBytes()
             }
+            .onAppear { ranker = Ranker.loadStatus() }
         }
+    }
+
+    // What the learned ranker is doing, in plain words.
+    private var recommendationsSection: some View {
+        Section {
+            Toggle(isOn: $learnedRanker) {
+                Text("Learn from my feedback").foregroundStyle(Palette.textPrimary)
+            }
+            .frame(minHeight: Spacing.target)
+            .listRowBackground(Palette.surface)
+            value("Ranking", learnedRanker && ranker?.learned != nil ? "Learned" : "Hand-set")
+            value("Feedback", ranker.map { "\($0.examples) songs, \($0.yeses) yeses" } ?? "None yet")
+            if learnedRanker, let learned = ranker?.learned {
+                ForEach(Array(Ranker.inputNames.enumerated()), id: \.offset) { index, name in
+                    if let name {
+                        let was = RankerWeights.handSet.weights[index]
+                        value(name, String(format: "%.2f (was %.1f)", learned.weights[index], was))
+                    }
+                }
+            }
+        } header: {
+            SectionTitle(title: "Recommendations").textCase(nil)
+        } footer: {
+            Text(rankerFooter).foregroundStyle(Palette.textMuted)
+        }
+    }
+
+    private var rankerFooter: String {
+        let rule = "Made for you mixes are ranked from what you preview, download, like, and mark Not interested. Changes apply when the mixes next refresh."
+        guard let ranker else { return rule }
+        if ranker.examples < Ranker.minimumExamples || ranker.yeses < Ranker.minimumYeses {
+            return rule + " Learning starts after \(Ranker.minimumExamples) songs with \(Ranker.minimumYeses) yeses."
+        }
+        if ranker.learned == nil {
+            return rule + " The learned ranking didn't beat the hand-set one on your recent feedback yet, so the hand-set one stays."
+        }
+        return rule + String(format: " On your recent feedback, the learned ranking puts a yes above a no %.0f%% of the time, versus %.0f%% hand-set.",
+                             (ranker.learnedQuality ?? 0) * 100, (ranker.handSetQuality ?? 0) * 100)
     }
 
     private func value(_ label: String, _ value: String) -> some View {
