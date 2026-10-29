@@ -409,6 +409,8 @@ enum YouTubeSource {
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
 
     private static let visitorSession = YouTubeVisitorSession()
+    // Playback keeps its own visitor, issued by a youtube.com watch page (see watchPageVisitor).
+    private static let playbackVisitorSession = YouTubeVisitorSession()
     private static let languageCode = YouTubeModel().selectedLocaleLanguageCode
 
     // A model belongs to one lookup; concurrent requests cannot change its visitor ID.
@@ -638,9 +640,12 @@ enum YouTubeSource {
     private static func audioStream(
         for video: YTVideo
     ) async throws -> (infos: VideoInfosWithDownloadFormatsResponse, format: AudioOnlyFormat, url: URL) {
-        // Discover and saved recommendations can start playback before any search/browse.
-        // Bootstrap through a normal public browse request, once for concurrent callers.
-        let visitorData = try await visitorSession.prepare {
+        // One playback visitor per app session, shared by concurrent callers. YouTube Music's
+        // browse visitor is only the fallback when the watch page doesn't include one.
+        let videoID = video.videoId
+        let visitorData = try await playbackVisitorSession.prepare {
+            let watchVisitor = try await watchPageVisitor(videoID: videoID)
+            if !watchVisitor.isEmpty { return watchVisitor }
             let json = try await musicRequest("browse", body: ["browseId": "FEmusic_home"])
             return dig(json, "responseContext", "visitorData") as? String ?? ""
         }
@@ -658,6 +663,23 @@ enum YouTubeSource {
             throw SourceError(errorDescription: "YouTube has no audio Freeify can play for this song. Try another version of it.\n\nDetails: formats \(found.isEmpty ? "none" : found)")
         }
         return (infos, format, url)
+    }
+
+    // yt-dlp and InnerTubeX take the anonymous visitor from the watch page's config;
+    // InnerTubeX found visionOS returned direct audio with it. Returns "" if none is found.
+    private static func watchPageVisitor(videoID: String) async throws -> String {
+        var request = URLRequest(url: URL(string: "https://www.youtube.com/watch?v=\(videoID)&bpctr=9999999999&has_verified=1")!)
+        request.timeoutInterval = 15
+        request.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Task.checkCancellation()
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return "" }
+        let html = String(decoding: data, as: UTF8.self)
+        guard let range = html.range(of: #""(VISITOR_DATA|visitorData)"\s*:\s*"[^"]+""#, options: .regularExpression)
+        else { return "" }
+        // `"VISITOR_DATA":"value"` → value
+        return html[range].split(separator: "\"").last.map(String.init) ?? ""
     }
 
     // A streamable asset for previews, sent with the same User-Agent as downloads, and the
