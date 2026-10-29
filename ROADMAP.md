@@ -200,11 +200,12 @@ weights on the held-back events and runs the mixes, and Settings shows what it l
 
 ## 7. Design (DESIGN.md)
 
-- [ ] 🔨 Dark theme from DESIGN.md tokens: pink for selection and favorites, orange for play and primary actions, cyan for playing and progress, pale green for saved
+- [ ] 🔨 Dark theme from DESIGN.md tokens: pink for selection and favorites, red for play and primary actions, cyan for playing and progress, pale green for saved
 - [ ] 🔨 Character motifs: hair slash on section titles, armor-cut corner on primary buttons and mix covers, octagonal play button, armor brackets around Now Playing art
 - [ ] 🔨 Song rows: 48 pt covers, playing marker and indicator, status chips, and a More button on every row
 - [x] Motion: a one-time "Saved" check and light tap when a download completes, 180 ms fades for the current song and shuffle/repeat; all static with Reduce Motion
-- [ ] 🔨 Optional motifs: loose arc and a hanging zigzag braid (tapering and fading, per the full-body reference) in the empty-library illustration
+- [ ] 🔨 Optional motifs: loose arc and a hanging zigzag braid in the empty-library illustration: a chain of filled diamonds that shrink and fade toward the tip, per both references
+- [ ] 🔨 From the reference images: red action color (`#F5443A`, the gloves' red) for play and primary buttons, a lighter bevel facet at the clipped corner of primary buttons and raised panels (the faceted shoulder plates), and seams layering the octagonal play button (the segmented mask)
 - [ ] 🔨 Mini player, Now Playing, queue, and Discover restyled; Library is the landing tab; Settings tab with storage and About
 - [ ] Check on the phone: 320/390/430 pt widths, large text, VoiceOver, Reduce Motion
 

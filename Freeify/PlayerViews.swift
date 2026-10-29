@@ -85,7 +85,7 @@ private struct ProgressStrip: View {
     }
 }
 
-// Play/pause in the warm action color. Small sizes use a circle; Now Playing uses the octagon.
+// Play/pause in the red action color. Small sizes use a circle; Now Playing uses the octagon.
 struct RoundPlayButton: View {
     let size: CGFloat
     var octagon = false
@@ -98,6 +98,8 @@ struct RoundPlayButton: View {
             ZStack {
                 if octagon {
                     PlayHousing().fill(Palette.action)
+                    PlayHousingSeams()
+                        .stroke(Palette.inkOnAccent.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, lineJoin: .bevel))
                 } else {
                     Circle().fill(Palette.action)
                 }

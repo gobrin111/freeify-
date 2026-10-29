@@ -89,6 +89,7 @@ struct LibraryView: View {
                         .foregroundStyle(Palette.textPrimary)
                         .padding(Spacing.xl)
                         .background(Palette.raised, in: ArmorPanelShape(cut: 12))
+                        .overlay { ArmorFacetShape(cut: 12).fill(Palette.borderSubtle) }
                 }
             }
             .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.audio]) { result in

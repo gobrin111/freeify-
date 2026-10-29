@@ -16,7 +16,7 @@ enum Palette {
     static let textSecondary = Color(hex: 0xBEB1C2)
     static let textMuted = Color(hex: 0x96899D)
     static let hair = Color(hex: 0xE9B8D2) // selection, section accents, favorites
-    static let action = Color(hex: 0xFF715B) // primary actions and the main play control
+    static let action = Color(hex: 0xF5443A) // primary actions and the main play control; the gloves' red
     static let activity = Color(hex: 0x71E5EA) // progress, playing, focus
     static let ready = Color(hex: 0xDCEEA5) // saved / available offline
     static let error = Color(hex: 0xFF939E) // errors and destructive actions
@@ -70,6 +70,24 @@ struct ArmorPanelShape: Shape {
     }
 }
 
+// The bevel along an armor panel's clipped corner, from the faceted shoulder and boot plates
+// in the full-body reference. Drawn over the panel in a lighter or darker shade; decorative only.
+struct ArmorFacetShape: Shape {
+    var cut: CGFloat = 10
+
+    func path(in rect: CGRect) -> Path {
+        let cut = min(cut, min(rect.width, rect.height) * 0.15)
+        let inner = cut * 2.2
+        var path = Path()
+        path.move(to: CGPoint(x: rect.maxX - cut, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - inner, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + inner))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + cut))
+        path.closeSubpath()
+        return path
+    }
+}
+
 // The tapered hair slash beside section titles and selected items. Decorative only.
 struct HairSlash: View {
     var height: CGFloat = 18
@@ -105,6 +123,19 @@ struct PlayHousing: Shape {
     }
 }
 
+// Seams that split the housing into layered plates, like the segmented mask in the
+// face close-up: an inset rim joined to each outer corner. Abstract, never a literal mask.
+struct PlayHousingSeams: Shape {
+    func path(in rect: CGRect) -> Path {
+        SVGShape(
+            path: "M20 6 H52 L66 20 V52 L52 66 H20 L6 52 V20 Z "
+                + "M18 0 L20 6 M54 0 L52 6 M72 18 L66 20 M72 54 L66 52 "
+                + "M54 72 L52 66 M18 72 L20 66 M0 54 L6 52 M0 18 L6 20",
+            viewBox: 72
+        ).path(in: rect)
+    }
+}
+
 // Two corner brackets outside full artwork: top-left, and bottom-right turning cyan while playing.
 struct ArmorBrackets: View {
     let isPlaying: Bool
@@ -134,6 +165,10 @@ struct ArmorBrackets: View {
 struct EmptyStateMark: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
+            ArmorFacetShape(cut: 12)
+                .fill(Palette.borderSubtle)
+                .frame(width: 80, height: 80)
+                .offset(x: 30, y: 22)
             ArmorPanelShape(cut: 12)
                 .stroke(Palette.borderControl, lineWidth: 2)
                 .frame(width: 80, height: 80)
@@ -145,32 +180,38 @@ struct EmptyStateMark: View {
                 .frame(width: 70, height: 20)
                 .offset(x: 24, y: 0)
             ZigzagStrand()
-                .stroke(
-                    LinearGradient(colors: [Palette.hair, Palette.hair.opacity(0.15)], startPoint: .top, endPoint: .bottom),
-                    style: StrokeStyle(lineWidth: 2, lineJoin: .bevel)
-                )
-                .frame(width: 16, height: 64)
-                .offset(x: 4, y: 36)
+                .fill(LinearGradient(colors: [Palette.hair, Palette.hair.opacity(0.15)], startPoint: .top, endPoint: .bottom))
+                .frame(width: 20, height: 70)
+                .offset(x: 2, y: 36)
         }
         .frame(width: 135, height: 110, alignment: .topLeading)
         .accessibilityHidden(true)
     }
 }
 
-// The zigzag braid from the full-body reference: sharp points that narrow toward the tip.
+// The zigzag braid from both references: a chain of filled diamond segments, each leaning
+// the other way and smaller than the last, so the braid narrows toward the tip.
 struct ZigzagStrand: Shape {
-    var points = 9
+    var segments = 8
 
     func path(in rect: CGRect) -> Path {
+        // Segment scale falls from 1 to 0.5; the heights together fill the rect.
+        let scales = (0..<segments).map { 1 - 0.5 * CGFloat($0) / CGFloat(max(segments - 1, 1)) }
+        let unit = rect.height / scales.reduce(0, +)
         var path = Path()
-        for index in 0...points {
-            let progress = CGFloat(index) / CGFloat(points)
-            let swing = rect.width / 2 * (1 - progress * 0.7)
-            let point = CGPoint(
-                x: rect.midX + (index.isMultiple(of: 2) ? -swing : swing),
-                y: rect.minY + rect.height * progress
-            )
-            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        var top = CGPoint(x: rect.midX, y: rect.minY)
+        for (index, scale) in scales.enumerated() {
+            let height = unit * scale
+            let swing = rect.width * 0.1 * scale
+            let bottom = CGPoint(x: rect.midX + (index.isMultiple(of: 2) ? swing : -swing), y: top.y + height)
+            let middle = CGPoint(x: (top.x + bottom.x) / 2, y: top.y + height / 2)
+            let halfWidth = rect.width * 0.4 * scale
+            path.move(to: top)
+            path.addLine(to: CGPoint(x: middle.x + halfWidth, y: middle.y))
+            path.addLine(to: bottom)
+            path.addLine(to: CGPoint(x: middle.x - halfWidth, y: middle.y))
+            path.closeSubpath()
+            top = bottom
         }
         return path
     }
@@ -288,7 +329,7 @@ struct SVGShape: Shape {
 
 // MARK: - Components
 
-// The warm primary action: armor-cut fill, dark label, gentle press.
+// The red primary action: armor-cut fill with a facet, dark label, gentle press.
 struct PrimaryActionStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -300,6 +341,12 @@ struct PrimaryActionStyle: ButtonStyle {
             .padding(.horizontal, Spacing.gutter)
             .frame(minHeight: 48)
             .background(isEnabled ? Palette.action : Palette.raised, in: ArmorPanelShape(cut: 8))
+            .overlay {
+                // Lighter bevel at the cut corner; the label's 20 pt padding keeps it clear.
+                ArmorFacetShape(cut: 8)
+                    .fill(Color.white.opacity(isEnabled ? 0.22 : 0.06))
+                    .allowsHitTesting(false)
+            }
             .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)

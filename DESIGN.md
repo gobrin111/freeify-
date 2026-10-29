@@ -19,12 +19,13 @@ Deliver reusable themed components, all documented states, and a working small-s
 | Long pale pink, angular hair with sharp tapering ends | Pale pink accent; short tapered slash | Selected navigation, section markers, progress thumb detail |
 | Uneven hair lengths and angular silhouette | One asymmetric clipped corner | Featured panel, primary action, player frame |
 | Black jacket and layered graphite mechanical panels | Matte dark surfaces with restrained borders | Background, rows, sheets, mini player |
-| Red-orange glove, collar, and mask accents | Warm action color | Primary play/download action |
+| Red glove, boot spikes, and mask cut | Red action color | Primary play/download action |
+| Faceted grey shoulder and boot plates | Lighter bevel strip along the clipped corner | Primary actions, raised armor panels, empty-state panel |
 | Cyan eye and mechanical light | Cool activity indicator | Active playback, downloading, focus |
 | Pale yellow-green mask illumination in the dark reference | Small confirmation light | Saved/offline-ready status only |
-| Segmented mask and forearm plates | Two or three offset geometric pieces | Download tray, queue icon, artwork corner brackets |
+| Segmented mask and forearm plates | Two or three offset geometric pieces; seams that layer the play housing | Download tray, queue icon, artwork corner brackets, large play button |
 | Narrow curved strand above the hair | Single loose arc | Optional empty-state illustration only |
-| Zigzag strand visible in the wider reference | Restrained tapered zigzag line, fading toward the tip | Optional empty-state accent; never text underline |
+| Zigzag braid in both references | Chain of filled diamond segments, leaning alternately, shrinking and fading toward the tip | Optional empty-state accent; never text underline |
 
 The visual character is expressive, angular, mechanical, and playful. Keep the content calm. No generic neon city backgrounds, random circuit boards, glitching labels, or dense fake diagnostics.
 
@@ -44,7 +45,7 @@ Use solid fills by default. Hex values are sRGB. Token names are semantic and mu
 | `color.text.secondary` | `#BEB1C2` | Artist, duration, supporting labels |
 | `color.text.muted` | `#96899D` | Noncritical metadata |
 | `color.accent.hair` | `#E9B8D2` | Selected tabs, section accents, favorites |
-| `color.accent.action` | `#FF715B` | Primary filled CTA and main playback control |
+| `color.accent.action` | `#F5443A` | Primary filled CTA and main playback control (5.2:1 with `ink.onAccent`) |
 | `color.accent.activity` | `#71E5EA` | Progress, playing status, keyboard focus |
 | `color.accent.ready` | `#DCEEA5` | Completed / available offline |
 | `color.status.error` | `#FF939E` | Error text/icon and destructive actions |
@@ -52,7 +53,7 @@ Use solid fills by default. Hex values are sRGB. Token names are semantic and mu
 
 Allocate roughly 80% of visible UI area to dark neutrals, 15% to text/artwork framing, and 5% to colored accents, excluding actual track artwork. Do not tint song thumbnails to fit the theme.
 
-Use dark text on bright buttons, never white on the warm action fill. Borders that carry essential control information use `border.control`, not `border.subtle`. Do not rely on color alone: pair playing, saved, failure, and selection states with an icon or label.
+Use dark text on bright buttons, never white on the red action fill. Borders that carry essential control information use `border.control`, not `border.subtle`. Do not rely on color alone: pair playing, saved, failure, and selection states with an icon or label.
 
 The existing vivid multicolor Freeify logo remains the brand asset. Do not regenerate it, recolor it, or apply its rainbow gradient across the interface. Use it sparingly in About and optional onboarding. The character palette controls the app chrome.
 
@@ -69,6 +70,14 @@ Create a reusable `ArmorPanelShape(cut: 10)` with a rectangular outline and a si
 Default cut is 10 pt; 6 pt for compact chips, 12 pt for prominent artwork frames. Maximum cut is 15% of the shorter side. Use an internal 1 pt border. Keep content at least 16 pt away from panel edges and the clipped corner. Hit areas remain rectangular; do not make the clipped silhouette reduce tappable area.
 
 Use on primary CTAs and featured player frames. Ordinary list rows remain simple rectangles with 8 pt image corners. Native sheets can retain their standard rounded top corners. Do not chamfer every surface.
+
+### Armor facet
+
+`ArmorFacetShape(cut:)`, from the faceted shoulder and boot plates, is a bevel strip along the clipped corner, between the cut edge and a parallel line at 2.2 × the cut:
+
+`(w-cut,0) → (w-2.2·cut,0) → (w,2.2·cut) → (w,cut) → close`
+
+Fill white at 22% over the action fill (6% when disabled), or `border.subtle` over raised panels. Use it with the armor panel on primary actions and raised panels, never over artwork. Content padding keeps labels clear of it.
 
 ### Hair slash
 
@@ -88,7 +97,7 @@ Use an eight-sided housing for the large play button. On a 72 × 72 view box:
 
 `M 18 0 H 54 L 72 18 V 54 L 54 72 H 18 L 0 54 V 18 Z`
 
-Fill `accent.action`; central conventional play triangle uses `ink.onAccent`. No literal face or mask illustration. Pause replaces the triangle with two bars inside the same housing. At smaller sizes simplify to a circle or modest chamfered square.
+Fill `accent.action`; central conventional play triangle uses `ink.onAccent`. Seams layer the housing like the segmented mask: an inset rim joined to each outer corner, `M 20 6 H 52 L 66 20 V 52 L 52 66 H 20 L 6 52 V 20 Z` plus a line from each outer vertex to its inset vertex, stroked 1.5 pt in `ink.onAccent` at 35%. No literal face or mask illustration. Pause replaces the triangle with two bars inside the same housing. At smaller sizes simplify to a circle or modest chamfered square.
 
 ## 5. Icon system
 
@@ -99,9 +108,9 @@ Prefer existing system icons for standard actions. Use custom vector paths only 
 | Action | Shape rule | Selected/active behavior |
 |---|---|---|
 | Library | Three vertical album spines; final spine has clipped upper corner | Pink stroke plus selection slash and label |
-| Add music | Conventional plus within an open chamfered square | Warm fill for the main CTA; neutral in tab bar |
+| Add music | Conventional plus within an open chamfered square | Red fill for the main CTA; neutral in tab bar |
 | Downloads | Down arrow into a tray with short angled ends | Cyan progress indicator; check on completion |
-| Play | Standard right-facing triangle | Dark glyph on orange housing |
+| Play | Standard right-facing triangle | Dark glyph on red housing |
 | Pause | Two equal vertical bars | Same housing and alignment as play |
 | Previous / next | Standard triangle plus end bar | Neutral glyph, pressed surface on touch |
 | Queue | Three stacked lines of unequal lengths with one clipped end | Cyan when the queue sheet is open |
@@ -145,7 +154,7 @@ Avoid all-caps paragraphs, excessive tracking, and fake terminal readouts. Funct
 
 ### Primary action
 
-Minimum 48 pt high, horizontal padding 20 pt, single 8 pt corner cut. Warm fill and dark label. Icon optional. Press: scale to 0.98 and return; disabled: neutral raised fill and secondary label, no scale. Loading: spinner and a stable-width label; prevent duplicate submissions. Error details appear below the control.
+Minimum 48 pt high, horizontal padding 20 pt, single 8 pt corner cut with the armor facet. Red fill and dark label. Icon optional. Press: scale to 0.98 and return; disabled: neutral raised fill and secondary label, no scale. Loading: spinner and a stable-width label; prevent duplicate submissions. Error details appear below the control.
 
 ### Track row
 
@@ -257,7 +266,7 @@ Do not infer additional character details or fetch replacement references. Do no
 ## 13. Acceptance checklist for the implementing AI
 
 - [ ] The app reads as a music player immediately.
-- [ ] Pink hair accents, orange actions, and cyan activity each have a consistent role.
+- [ ] Pink hair accents, red actions, and cyan activity each have a consistent role.
 - [ ] At least three specific character-derived motifs are implemented: hair slash, clipped armor panel, and octagonal play housing.
 - [ ] Standard icons remain recognizable; navigation includes labels.
 - [ ] Original Freeify brand logo is preserved and not used as a full-screen color scheme.
