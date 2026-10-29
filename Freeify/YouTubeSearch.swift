@@ -774,21 +774,26 @@ enum YouTubeSource {
         if let error = error as? URLError,
            [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost,
             .cannotConnectToHost, .dataNotAllowed].contains(error.code) {
-            return "Freeify couldn’t reach YouTube. Check your internet connection and try again."
+            return "Freeify couldn’t reach YouTube. Check your internet connection and try again.\n\nError code: URLError \(error.code.rawValue)"
         }
         let details = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         let message: String
+        let code: String
         if details.localizedCaseInsensitiveContains("Login is required")
             || details.localizedCaseInsensitiveContains("LOGIN_REQUIRED")
             || details.localizedCaseInsensitiveContains("sign in")
             || details.localizedCaseInsensitiveContains("not a bot") {
             message = "YouTube requires sign-in or verification for this request. Freeify can’t complete that check. Open the song in YouTube to listen there, or try Freeify later. Saved songs still play offline."
+            code = "LOGIN_REQUIRED"
         } else if details.localizedCaseInsensitiveContains("unavailable") {
             message = "This song isn’t available on YouTube right now. Try another version of it."
+            code = "UNAVAILABLE"
         } else {
             message = "YouTube wouldn’t let Freeify get this song. Try again, or try another version of it."
+            let error = error as NSError
+            code = "\(error.domain) \(error.code)"
         }
-        return "\(message)\n\nDetails: \(details)"
+        return "\(message)\n\nError code: \(code)\n\nDetails: \(details)"
     }
 
     // Resumes a continuation once, from whichever task finishes first.
