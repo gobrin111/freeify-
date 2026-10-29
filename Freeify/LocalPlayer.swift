@@ -74,6 +74,18 @@ struct Listen {
 }
 
 // Shuffle, repeat, and the last song and position, kept across launches.
+// Volume matching: YouTube measures each song's loudness against its -14 LUFS target.
+// Louder songs are turned down to the target; quieter ones can't go above full volume.
+enum VolumeMatch {
+    static let enabledKey = "player.matchVolume"
+    static var isEnabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
+
+    static func volume(forLoudness loudness: Double?) -> Float {
+        guard isEnabled, let loudness, loudness > 0 else { return 1 }
+        return Float(pow(10, -loudness / 20))
+    }
+}
+
 private enum Saved {
     static let shuffle = "player.shuffle"
     static let repeatMode = "player.repeatMode"
@@ -132,6 +144,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let itemID: String
         let player: AVPlayer
         let item: AVPlayerItem
+        let loudness: Double?
         let status: NSKeyValueObservation
     }
     private var timer: Timer?
@@ -390,6 +403,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             do {
                 let player = try AVAudioPlayer(contentsOf: track.fileURL)
                 player.delegate = self
+                player.volume = VolumeMatch.volume(forLoudness: track.loudness)
                 audio = player
                 duration = player.duration
             } catch {
@@ -412,7 +426,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             loadStreamArtwork(song, generation: openGeneration)
             if let prepared, prepared.itemID == item.id {
                 self.prepared = nil
-                attachStream(prepared.player, item: prepared.item, generation: openGeneration)
+                attachStream(prepared.player, item: prepared.item, loudness: prepared.loudness, generation: openGeneration)
             } else {
                 discardPrepared()
                 isLoading = true
@@ -439,10 +453,10 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func loadStream(_ song: SongResult, generation: Int) {
         Task { @MainActor in
             do {
-                let asset = try await YouTubeSource.previewAsset(videoID: song.id)
+                let (asset, loudness) = try await YouTubeSource.previewAsset(videoID: song.id)
                 guard generation == openGeneration else { return }
                 let item = AVPlayerItem(asset: asset)
-                attachStream(AVPlayer(playerItem: item), item: item, generation: generation)
+                attachStream(AVPlayer(playerItem: item), item: item, loudness: loudness, generation: generation)
             } catch {
                 guard generation == openGeneration else { return }
                 streamFailed(YouTubeSource.describe(error))
@@ -451,7 +465,8 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     // Make a loaded or prepared stream the current one.
-    private func attachStream(_ player: AVPlayer, item: AVPlayerItem, generation: Int) {
+    private func attachStream(_ player: AVPlayer, item: AVPlayerItem, loudness: Double?, generation: Int) {
+        player.volume = VolumeMatch.volume(forLoudness: loudness)
         stream = player
         isLoading = item.status != .readyToPlay
         streamStatus = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
@@ -500,14 +515,14 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         preparingID = next.id
         attemptedPrepareID = next.id
         Task { @MainActor in
-            guard let asset = try? await YouTubeSource.previewAsset(videoID: song.id),
+            guard let found = try? await YouTubeSource.previewAsset(videoID: song.id),
                   preparingID == next.id
             else {
                 if preparingID == next.id { preparingID = nil }
                 return
             }
             preparingID = nil
-            let item = AVPlayerItem(asset: asset)
+            let item = AVPlayerItem(asset: found.asset)
             let player = AVPlayer(playerItem: item)
             // Buffer the start once it's ready, so it can begin at once.
             let status = item.observe(\.status, options: [.initial, .new]) { item, _ in
@@ -517,7 +532,7 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     if player.status == .readyToPlay && player.rate == 0 { player.preroll(atRate: 1) }
                 }
             }
-            prepared = PreparedStream(itemID: next.id, player: player, item: item, status: status)
+            prepared = PreparedStream(itemID: next.id, player: player, item: item, loudness: found.loudness, status: status)
         }
     }
 

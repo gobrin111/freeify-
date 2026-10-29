@@ -339,7 +339,7 @@ final class PreviewPlayer: ObservableObject {
         isLoading = true
         Task { @MainActor in
             do {
-                let asset = try await YouTubeSource.previewAsset(videoID: song.id)
+                let (asset, loudness) = try await YouTubeSource.previewAsset(videoID: song.id)
                 // Stopped, or another song picked, while the link loaded.
                 guard songID == song.id else { return }
                 let session = AVAudioSession.sharedInstance()
@@ -365,6 +365,7 @@ final class PreviewPlayer: ObservableObject {
                     Task { @MainActor [weak self] in self?.stop() }
                 }
                 let player = AVPlayer(playerItem: item)
+                player.volume = VolumeMatch.volume(forLoudness: loudness)
                 self.player = player
                 player.play()
             } catch {
@@ -627,10 +628,18 @@ enum YouTubeSource {
         return (infos, format, url)
     }
 
-    // A streamable asset for previews, sent with the same User-Agent as downloads.
-    static func previewAsset(videoID: String) async throws -> AVURLAsset {
-        let url = try await audioStream(for: YTVideo(videoId: videoID)).url
-        return AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": userAgent]])
+    // A streamable asset for previews, sent with the same User-Agent as downloads, and the
+    // song's loudness for volume matching.
+    static func previewAsset(videoID: String) async throws -> (asset: AVURLAsset, loudness: Double?) {
+        let stream = try await audioStream(for: YTVideo(videoId: videoID))
+        let asset = AVURLAsset(url: stream.url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": userAgent]])
+        return (asset, stream.format.loudness)
+    }
+
+    // A saved song's loudness, for songs downloaded before Freeify kept it. 0 when YouTube
+    // doesn't list one, so the song isn't looked up again.
+    static func loudness(videoID: String) async throws -> Double {
+        try await audioStream(for: YTVideo(videoId: videoID)).format.loudness ?? 0
     }
 
     private static func download(
@@ -663,9 +672,12 @@ enum YouTubeSource {
             infos.videoInfos.title ?? "Untitled",
             channel: infos.videoInfos.channel?.name
         )
+        let loudness = format.loudness
         do {
             return try await Task.detached(priority: .userInitiated) {
-                try AudioFiles.saveDownload(temporary, title: name.title, artist: name.artist, youtubeID: video.videoId)
+                var saved = try AudioFiles.saveDownload(temporary, title: name.title, artist: name.artist, youtubeID: video.videoId)
+                saved.loudness = loudness
+                return saved
             }.value
         } catch {
             try? FileManager.default.removeItem(at: temporary)

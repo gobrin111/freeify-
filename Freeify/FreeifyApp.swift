@@ -56,6 +56,7 @@ struct RootView: View {
         .task {
             store.attach(modelContext)
             restoreLastSong()
+            await store.lookUpLoudness(in: modelContext)
         }
     }
 

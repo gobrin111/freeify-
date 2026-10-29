@@ -77,6 +77,7 @@ settings first. No server may be introduced to make this work.
 - [ ] 🔨 Sort the library by recently added, title, or artist
 - [ ] 🔨 Compact player bar that opens a full-screen player with like and queue buttons; it has a close button that stops the music, and lists scroll clear of it
 - [ ] 🔨 Shuffle, repeat, and the last song (paused where it stopped) are remembered after Freeify closes
+- [ ] 🔨 Match volume (on by default, in Settings): louder songs are turned down to YouTube's -14 LUFS level using YouTube's loudness for each song, for saved songs, streams, and previews; older downloads get it looked up once in the background
 
 ## 5. Discover
 

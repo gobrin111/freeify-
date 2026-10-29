@@ -70,6 +70,7 @@ final class LibraryStore: ObservableObject {
     func add(_ saved: SavedAudio, in context: ModelContext) throws {
         let track = Track(title: saved.title, artist: saved.artist, filename: saved.filename, youtubeID: saved.youtubeID)
         track.artworkFilename = saved.artworkFilename
+        track.loudness = saved.loudness
         let savedURLs = [track.fileURL, track.artworkURL].compactMap { $0 }
         context.insert(track)
         do {
@@ -78,6 +79,21 @@ final class LibraryStore: ObservableObject {
             context.rollback()
             savedURLs.forEach { try? FileManager.default.removeItem(at: $0) }
             throw error
+        }
+    }
+
+    // Songs downloaded before Freeify kept YouTube's loudness get it looked up once, in the
+    // background, so volume matching covers them too. Stops at the first failure, e.g. offline,
+    // and tries again next launch.
+    func lookUpLoudness(in context: ModelContext) async {
+        let missing = ((try? context.fetch(FetchDescriptor<Track>())) ?? [])
+            .filter { $0.isDownloaded && $0.loudness == nil && $0.youtubeID != nil }
+        for track in missing {
+            guard let videoID = track.youtubeID,
+                  let loudness = try? await YouTubeSource.loudness(videoID: videoID)
+            else { break }
+            track.loudness = loudness
+            try? context.save()
         }
     }
 
@@ -330,6 +346,7 @@ final class LibraryStore: ObservableObject {
         }
         track.filename = saved.filename
         track.isDownloaded = true
+        track.loudness = saved.loudness ?? track.loudness
         // Keep the existing cover art; use the new copy only if there was none.
         if track.artworkFilename == nil {
             track.artworkFilename = saved.artworkFilename

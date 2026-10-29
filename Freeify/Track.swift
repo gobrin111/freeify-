@@ -17,6 +17,8 @@ final class Track {
     var artworkFilename: String?
     // YouTube Music's cover art, for songs added as "Not downloaded" by Download All.
     var remoteArtworkURL: String?
+    // YouTube's loudness in dB above its -14 LUFS target, for volume matching.
+    var loudness: Double?
 
     init(title: String, artist: String?, filename: String, youtubeID: String?) {
         id = UUID()
@@ -85,6 +87,7 @@ struct SavedAudio: Sendable {
     var filename: String
     var youtubeID: String?
     var artworkFilename: String?
+    var loudness: Double?
 }
 
 // Saved cover art, cached in memory so scrolling lists don't reread files.

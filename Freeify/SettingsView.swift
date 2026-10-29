@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var storageBytes: Int64 = 0
     @State private var ranker = Ranker.loadStatus()
     @AppStorage(Ranker.enabledKey) private var learnedRanker = true
+    @AppStorage(VolumeMatch.enabledKey) private var matchVolume = true
 
     private var savedCount: Int { tracks.filter { $0.isDownloaded }.count }
     private var version: String {
@@ -31,6 +32,18 @@ struct SettingsView: View {
                     SectionTitle(title: "Storage").textCase(nil)
                 } footer: {
                     Text("Saved songs play without internet. Searching and new downloads need a connection.")
+                        .foregroundStyle(Palette.textMuted)
+                }
+                Section {
+                    Toggle(isOn: $matchVolume) {
+                        Text("Match volume").foregroundStyle(Palette.textPrimary)
+                    }
+                    .frame(minHeight: Spacing.target)
+                    .listRowBackground(Palette.surface)
+                } header: {
+                    SectionTitle(title: "Playback").textCase(nil)
+                } footer: {
+                    Text("Turns louder songs down to the same level, using YouTube's loudness for each song. Applies from the next song.")
                         .foregroundStyle(Palette.textMuted)
                 }
                 recommendationsSection
