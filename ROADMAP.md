@@ -22,13 +22,48 @@ on the iPhone. A local check on Windows does not count as an iPhone test.
 ## 2. Online source feasibility (done)
 
 - [x] Search from the phone, download a track, and play it offline
+- [x] Playback takes its visitor ID from a youtube.com watch page, which fixed the
+  October 2026 "Login is required" block (search and Discover keep YouTube Music's)
+- [ ] 🔨 Background loudness lookups for older downloads wait 30 seconds between
+  songs; the unpaced pass likely set off that block
 
 Downloads use [YouTubeKit](https://github.com/b5i/YouTubeKit) (b5i), pinned to
 commit `6532af3`, requesting formats as YouTube's visionOS client (the default iOS
-client needs a proof-of-origin token). Requests send a visitor ID from search
-(without it, YouTube's bot check reports "Login is required"). YouTube extraction
-is unofficial and may break; if downloads break, check yt-dlp's current client
-settings first. No server may be introduced to make this work.
+client needs a proof-of-origin token). Playback sends the visitor ID from a
+youtube.com watch page's config, the same source yt-dlp and InnerTubeX use; YouTube
+Music's shorter browse visitor got "Login is required" on the phone. YouTube
+extraction is unofficial and may break; if downloads break, check yt-dlp's current
+client settings first. No server may be introduced to make this work.
+
+### If YouTube blocks playback again
+
+Try these in order. Each is `[ ]` until it is needed and then checked on the phone.
+
+- [ ] **Diagnose first.** Compare against current yt-dlp from the PC on the same
+  network (`--extractor-args "youtube:player_client=visionos"`). Test the phone on
+  home Wi-Fi and on cellular with VPNs off. Check whether the phone uses IPv6
+  (`api64.ipify.org` in Safari, Private Relay off); the PC is IPv4-only, and if
+  only IPv6 is blocked, force IPv4 for YouTube requests
+- [ ] **Show YouTube's reason** (`playabilityStatus.reason`) in the error popup;
+  YouTubeKit drops it, so a "Login is required" can't be told apart from age limits
+  or a region block
+- [ ] **Optional sign-in** through a WebView, sending the account's cookies with
+  playback requests. yt-dlp's maintainers recommend this for bot checks. It needs
+  the "accounts" exclusion below lifted and risks flagging the Google account
+- [ ] **TV client fallback, done properly.** The reverted attempt (`cd5cc6b`) could
+  not work: TV formats come back ciphered. It needs yt-dlp's current TV client
+  (`tv_samsung`), `signatureTimestamp` from the player script, and YouTubeKit's
+  `deciphersURLs(player:)` for the signature and `n` parameter
+- [ ] **Proof-of-origin tokens** from YouTube's BotGuard in a hidden `WKWebView`,
+  with the web or mweb client. This fixes 403s on audio URLs, not "Login is
+  required"; InnerTubeX uses it only for age-restricted and uploaded videos.
+  Reference: [ytm-ios-probe](https://github.com/HCK5722/ytm-ios-probe)
+  `PoTokenService.swift` and [InnerTubeX](https://github.com/MetrolistGroup/innertubex)
+- [ ] **While blocked:** grey out songs that aren't saved, with one banner, rechecked
+  at launch
+- [ ] **Another source:** [Audius](https://docs.audius.co/) (free public API that
+  allows streaming and downloads) after checking its catalog and terms; Jamendo
+  needs a key entered in Settings
 
 ## 3. Search and download
 
@@ -78,7 +113,7 @@ settings first. No server may be introduced to make this work.
 - [ ] 🔨 Sort the library by recently added, title, or artist
 - [ ] 🔨 Compact player bar that opens a full-screen player with like and queue buttons; it has a close button that stops the music, and lists scroll clear of it
 - [ ] 🔨 Shuffle, repeat, and the last song (paused where it stopped) are remembered after Freeify closes
-- [ ] 🔨 Match volume (on by default, in Settings): louder songs are turned down to YouTube's -14 LUFS level using YouTube's loudness for each song, for saved songs, streams, and previews; older downloads get it looked up once in the background
+- [ ] 🔨 Match volume (on by default, in Settings): louder songs are turned down to YouTube's -14 LUFS level using YouTube's loudness for each song, for saved songs, streams, and previews; older downloads get it looked up once in the background, 30 seconds apart
 
 ## 5. Discover
 

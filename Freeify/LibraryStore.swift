@@ -89,7 +89,10 @@ final class LibraryStore: ObservableObject {
         let missing = ((try? context.fetch(FetchDescriptor<Track>())) ?? [])
             .filter { $0.isDownloaded && $0.loudness == nil && $0.youtubeID != nil }
         for track in missing {
-            guard let videoID = track.youtubeID,
+            // Paced like listening, not scraping: an unpaced pass over the whole library likely
+            // triggered YouTube's "Login is required" bot check in October 2026.
+            guard (try? await Task.sleep(for: .seconds(30))) != nil,
+                  let videoID = track.youtubeID,
                   let loudness = try? await YouTubeSource.loudness(videoID: videoID)
             else { break }
             track.loudness = loudness

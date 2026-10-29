@@ -35,24 +35,27 @@ There are no music service credentials, backend, or cloud library sync.
 
 ### YouTube verification errors
 
-Playback establishes an anonymous visitor session before requesting audio, even
-when starting from a cached Discover list before searching. Concurrent first
-requests share that initialization, and requests use the visitor issued by
-YouTube consistently. Stopping previews or switching songs cancels obsolete
-work; late results cannot restart an old preview. This is a client-session fix,
-not a guarantee that YouTube will allow playback.
+Playback gets its anonymous visitor ID once per app session from a youtube.com
+watch page's config, the source yt-dlp uses, even when starting from a cached
+Discover list before searching. Search and Discover keep YouTube Music's own
+visitor. In October 2026 YouTube answered "Login is required" to playback that
+used YouTube Music's visitor; the watch-page visitor fixed it on the phone.
+Concurrent first requests share that initialization. Stopping previews or
+switching songs cancels obsolete work; late results cannot restart an old preview.
+Freeify keeps no cookies, since it never signs in.
+
+Requests are kept at a listening pace. The background loudness lookup for older
+downloads waits 30 seconds before each song; looking up the whole library at once
+likely set off that bot check. Avoid adding features that send YouTube bursts of
+requests.
 
 If YouTube explicitly asks for sign-in or bot verification, Freeify reports that
 requirement. Opening the song in YouTube lets you listen there; signing into
 Safari or the YouTube app does not authenticate Freeify. A request limit requires
 waiting rather than repeatedly pressing Play. Saved audio still works offline.
+If it happens again, `ROADMAP.md` lists what to try, in order.
 
-The Mac workflow runs session regression checks before building. To verify on the
-phone: relaunch Freeify, play from a cached Discover list before searching, then
-test a search preview and a download. Also stop and restart the same preview
-quickly and switch songs while loading; old results must not take over playback.
-If verification persists, capture the exact error details and whether downloading
-that same song also fails. These device checks remain unverified for this patch.
+The Mac workflow runs session regression checks before building.
 
 Requires iOS 17 or newer. The build uses the Xcode version installed by default
 on GitHub's `macos-15` runner and prints that version in its log. The app uses
