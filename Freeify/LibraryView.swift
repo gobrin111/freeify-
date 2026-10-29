@@ -46,7 +46,10 @@ struct LibraryView: View {
                     emptyLibrary
                 } else if filteredTracks.isEmpty {
                     ContentUnavailableView {
-                        Label("No matching tracks", systemImage: "magnifyingglass")
+                        VStack(spacing: Spacing.l) {
+                            EmptyStateMark()
+                            Text("No matching tracks")
+                        }
                     } description: {
                         Text("Try another title or artist.")
                     } actions: {

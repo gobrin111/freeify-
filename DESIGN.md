@@ -186,7 +186,7 @@ Use native modal behavior, safe areas, dismiss gestures, and accessible focus or
 4. Persistent mini player when a track is loaded.
 5. Bottom navigation: Library, Downloads, Settings. Show labels. Add a Playlists tab only when playlist functionality is implemented.
 
-No large decorative hero above the user's songs. Empty library: one small original abstract hair-slash/armor illustration, “Your music, ready offline”, and “Add music”. Search with no results: show “No matching tracks” and a clear-search action, not the first-run empty state.
+No large decorative hero above the user's songs. Empty library: one small original abstract hair-slash/armor illustration, “Your music, ready offline”, and “Add music”. Search with no results: the same mark above “No matching tracks” and a clear-search action, without the first-run promise or “Add music”. Settings → About also shows the mark below the logo.
 
 ### Add music — sheet or dedicated view
 

@@ -65,6 +65,11 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, Spacing.s)
                     .listRowBackground(Palette.surface)
+                    // The character mark, also shown when the library or a search is empty.
+                    EmptyStateMark()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.s)
+                        .listRowBackground(Palette.surface)
                 } header: {
                     SectionTitle(title: "About").textCase(nil)
                 } footer: {
