@@ -307,7 +307,8 @@ struct SongPickerView: View {
     }
 }
 
-// Choose a playlist for one or more library songs, or create a new one with them.
+// Add one or more library songs to playlists, or take them out. Playlists that already have
+// them show a check; tapping toggles, and the sheet stays open until Done.
 struct AddToPlaylistView: View {
     let tracks: [Track]
     @Environment(\.modelContext) private var modelContext
@@ -329,33 +330,66 @@ struct AddToPlaylistView: View {
                 }
                 .themedRow()
                 ForEach(playlists) { playlist in
+                    let state = membership(in: playlist)
                     Button {
-                        store.add(tracks, to: playlist, in: modelContext)
-                        dismiss()
+                        if state == .all {
+                            store.remove(tracks, from: playlist, in: modelContext)
+                        } else {
+                            store.add(tracks, to: playlist, in: modelContext)
+                        }
                     } label: {
-                        PlaylistLabel(playlist: playlist)
+                        HStack {
+                            PlaylistLabel(playlist: playlist)
+                            Spacer(minLength: Spacing.s)
+                            Image(systemName: state.symbol)
+                                .font(.title3)
+                                .foregroundStyle(state == .missing ? Palette.textMuted : Palette.hair)
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .themedRow()
+                    .accessibilityAddTraits(state == .all ? .isSelected : [])
+                    .accessibilityHint(state == .all ? "Removes from this playlist" : "Adds to this playlist")
                 }
             }
             .themedList()
             .navigationTitle(tracks.count == 1 ? "Add to Playlist" : "Add \(tracks.count) Songs")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
             .alert("New Playlist", isPresented: $naming) {
                 TextField("Name", text: $newName)
                 Button("Create") {
                     store.createPlaylist(named: playlistName(newName, existing: playlists), with: tracks, in: modelContext)
-                    dismiss()
+                    newName = ""
                 }
                 Button("Cancel", role: .cancel) { newName = "" }
             }
         }
         .presentationBackground(Palette.raised)
+    }
+
+    private enum Membership {
+        case missing, partial, all
+
+        var symbol: String {
+            switch self {
+            case .missing: return "circle"
+            case .partial: return "minus.circle.fill"
+            case .all: return "checkmark.circle.fill"
+            }
+        }
+    }
+
+    // With several songs selected, a playlist can have only some of them; tapping adds the rest.
+    private func membership(in playlist: Playlist) -> Membership {
+        let ids = Set(playlist.trackIDs)
+        let count = tracks.filter { ids.contains($0.id) }.count
+        return count == 0 ? .missing : (count == tracks.count ? .all : .partial)
     }
 }
 

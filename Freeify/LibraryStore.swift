@@ -253,6 +253,12 @@ final class LibraryStore: ObservableObject {
         save(context)
     }
 
+    func remove(_ tracks: [Track], from playlist: Playlist, in context: ModelContext) {
+        let ids = Set(tracks.map { $0.id })
+        playlist.trackIDs.removeAll { ids.contains($0) }
+        save(context)
+    }
+
     func delete(_ playlist: Playlist, in context: ModelContext) {
         context.delete(playlist)
         save(context)

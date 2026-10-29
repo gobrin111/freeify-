@@ -65,6 +65,7 @@ settings first. No server may be introduced to make this work.
 - [ ] 🔨 Create, rename, reorder, and delete playlists (delete by swiping in the Playlists list)
 - [ ] 🔨 One song can be in many playlists without a second copy; removing a song from the library removes it from every playlist
 - [ ] 🔨 Liked Songs: like from a swipe, long-press, or the full-screen player
+- [ ] 🔨 Add to Playlist shows a check on playlists that already have the song; tapping toggles it in or out, and the sheet stays open until Done
 
 ### 4.4 Queue controls
 
