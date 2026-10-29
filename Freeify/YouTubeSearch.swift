@@ -408,31 +408,70 @@ enum YouTubeSource {
     // Client settings follow yt-dlp's visionos client.
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
 
+    // Current configurations: https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_base.py
+    // Only direct AAC URLs are accepted. Ciphered, DRM, and SABR-only formats are not supported.
+    private enum PlaybackClient: String, CaseIterable {
+        case visionOS = "visionOS"
+        case tv = "TV"
+
+        var headerID: String { self == .visionOS ? "101" : "7" }
+        var userAgent: String {
+            self == .visionOS ? YouTubeSource.userAgent
+                : "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"
+        }
+        var context: [String: String] {
+            if self == .tv {
+                return ["clientName": "TVHTML5", "clientVersion": "5.20260707", "userAgent": userAgent]
+            }
+            return ["clientName": "VISIONOS", "clientVersion": "1.02", "deviceMake": "Apple",
+                    "deviceModel": "RealityDevice17,1", "osName": "visionOS",
+                    "osVersion": "26.5.23O471", "userAgent": userAgent]
+        }
+
+        static func shouldTryNext(_ error: Error, details: String) -> Bool {
+            // Network failures, cancellation, and rate limits must not cause client cycling.
+            if error is CancellationError || error is URLError { return false }
+            let text = details.lowercased()
+            if text.contains("429") || text.contains("too many requests") || text.contains("rate limit") { return false }
+            if error is ClientAttemptError { return true }
+            return text.contains("login is required") || text.contains("login_required")
+                || text.contains("not a bot") || text.contains("sign in")
+        }
+    }
+
+    private enum ClientAttemptError: LocalizedError {
+        case retryable(String)
+        var errorDescription: String? {
+            switch self { case .retryable(let reason): return reason }
+        }
+    }
+
     private static let visitorSession = YouTubeVisitorSession()
     private static let languageCode = YouTubeModel().selectedLocaleLanguageCode
 
     // A model belongs to one lookup; concurrent requests cannot change its visitor ID.
-    private static func makeModel(visitorData: String) throws -> YouTubeModel {
+    private static func makeModel(visitorData: String, client: PlaybackClient) throws -> YouTubeModel {
         let model = YouTubeModel()
         model.visitorData = visitorData
-        let visitorJSON = String(decoding: try JSONEncoder().encode(visitorData), as: UTF8.self)
-        // YouTubeKit's default iOS client needs a proof-of-origin token Freeify can't create,
-        // so its audio links can return HTTP 403. This existing client configuration is
-        // still unofficial and can also require verification or refuse a particular song.
+        var context = client.context
+        context["visitorData"] = visitorData
+        context["hl"] = languageCode
+        let contextJSON = String(decoding: try JSONSerialization.data(withJSONObject: context), as: UTF8.self)
+        // Header and body identify the same client and visitor for this attempt.
         model.customHeaders[.videoInfosWithDownloadFormats] = HeadersList(
             url: URL(string: "https://www.youtube.com/youtubei/v1/player")!,
             method: .POST,
             headers: [
                 .init(name: "Content-Type", content: "application/json"),
-                .init(name: "User-Agent", content: YouTubeSource.userAgent),
+                .init(name: "User-Agent", content: client.userAgent),
                 .init(name: "Origin", content: "https://www.youtube.com"),
-                .init(name: "X-Youtube-Client-Name", content: "101"),
-                .init(name: "X-Youtube-Client-Version", content: "1.02")
+                .init(name: "X-Youtube-Client-Name", content: client.headerID),
+                .init(name: "X-Youtube-Client-Version", content: client.context["clientVersion"]!)
             ],
             customHeaders: ["X-Goog-Visitor-Id": .visitorData],
             addQueryAfterParts: [.init(index: 0, encode: false, content: .query)],
             httpBody: [
-                #"{"contentCheckOk":true,"racyCheckOk":true,"context":{"client":{"clientName":"VISIONOS","clientVersion":"1.02","deviceMake":"Apple","deviceModel":"RealityDevice17,1","osName":"visionOS","osVersion":"26.5.23O471","hl":"en","visitorData":\#(visitorJSON),"userAgent":"\#(YouTubeSource.userAgent)"}},"playbackContext":{"contentPlaybackContext":{"html5Preference":"HTML5_PREF_WANTS"}},"videoId":""#,
+                #"{"contentCheckOk":true,"racyCheckOk":true,"context":{"client":\#(contextJSON)},"playbackContext":{"contentPlaybackContext":{"html5Preference":"HTML5_PREF_WANTS"}},"videoId":""#,
                 #""}"#
             ],
             parameters: [.init(name: "prettyPrint", content: "false")]
@@ -637,34 +676,69 @@ enum YouTubeSource {
     // YouTube's best AAC (audio/mp4) stream; AVAudioPlayer can't play its WebM/Opus formats.
     private static func audioStream(
         for video: YTVideo
-    ) async throws -> (infos: VideoInfosWithDownloadFormatsResponse, format: AudioOnlyFormat, url: URL) {
+    ) async throws -> (infos: VideoInfosWithDownloadFormatsResponse, format: AudioOnlyFormat, url: URL, userAgent: String) {
         // Discover and saved recommendations can start playback before any search/browse.
         // Bootstrap through a normal public browse request, once for concurrent callers.
         let visitorData = try await visitorSession.prepare {
             let json = try await musicRequest("browse", body: ["browseId": "FEmusic_home"])
             return dig(json, "responseContext", "visitorData") as? String ?? ""
         }
-        try Task.checkCancellation()
-        let infos = try await video.fetchStreamingInfosWithDownloadFormatsThrowing(
-            youtubeModel: makeModel(visitorData: visitorData)
-        )
-        try Task.checkCancellation()
-        let format = infos.downloadFormats
-            .compactMap { $0 as? AudioOnlyFormat }
-            .filter { $0.mimeType == "audio/mp4" && $0.url != nil && !$0.isDrc }
-            .max { ($0.averageBitrate ?? 0) < ($1.averageBitrate ?? 0) }
-        guard let format, let url = format.url else {
-            let found = Set(infos.downloadFormats.compactMap { $0.mimeType }).sorted().joined(separator: ", ")
-            throw SourceError(errorDescription: "YouTube has no audio Freeify can play for this song. Try another version of it.\n\nDetails: formats \(found.isEmpty ? "none" : found)")
+        var failures: [String] = []
+        for client in PlaybackClient.allCases {
+            try Task.checkCancellation()
+            do {
+                let infos = try await video.fetchStreamingInfosWithDownloadFormatsThrowing(
+                    youtubeModel: makeModel(visitorData: visitorData, client: client)
+                )
+                try Task.checkCancellation()
+                let format = infos.downloadFormats
+                    .compactMap { $0 as? AudioOnlyFormat }
+                    .filter { $0.mimeType == "audio/mp4" && $0.url != nil && !$0.isDrc }
+                    .max { ($0.averageBitrate ?? 0) < ($1.averageBitrate ?? 0) }
+                guard let format, let url = format.url else {
+                    throw ClientAttemptError.retryable("No direct AAC audio URL")
+                }
+                // A format URL alone is not success: it can still require attestation.
+                try await checkMediaAccess(url, userAgent: client.userAgent)
+                return (infos, format, url, client.userAgent)
+            } catch {
+                try Task.checkCancellation()
+                let details = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+                guard PlaybackClient.shouldTryNext(error, details: details) else { throw error }
+                failures.append("\(client.rawValue): \(details)")
+            }
         }
-        return (infos, format, url)
+        throw SourceError(errorDescription: "YouTube refused playback through the available clients. Sign-in or verification may still be required. Saved songs remain available offline.\n\nError code: CLIENTS_EXHAUSTED\n\nDetails: " + failures.joined(separator: "\n"))
+    }
+
+    private static func checkMediaAccess(_ url: URL, userAgent: String) async throws {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        defer { bytes.task.cancel() } // Never consume an entire song if Range is ignored.
+        try Task.checkCancellation()
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 429 {
+            throw SourceError(errorDescription: "YouTube is limiting requests (HTTP 429). Wait before trying again.")
+        }
+        if status == 401 || status == 403 {
+            throw ClientAttemptError.retryable("Audio access refused (HTTP \(status))")
+        }
+        guard (200...299).contains(status) else {
+            throw SourceError(errorDescription: "YouTube audio did not respond (HTTP \(status)). Try again later.")
+        }
+        if response.mimeType?.contains("text/html") == true {
+            throw ClientAttemptError.retryable("YouTube returned a web page instead of audio")
+        }
     }
 
     // A streamable asset for previews, sent with the same User-Agent as downloads, and the
     // song's loudness for volume matching.
     static func previewAsset(videoID: String) async throws -> (asset: AVURLAsset, loudness: Double?) {
         let stream = try await audioStream(for: YTVideo(videoId: videoID))
-        let asset = AVURLAsset(url: stream.url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": userAgent]])
+        let asset = AVURLAsset(url: stream.url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": stream.userAgent]])
         return (asset, stream.format.loudness)
     }
 
@@ -680,12 +754,12 @@ enum YouTubeSource {
         artist: String?,
         onProgress: @escaping @Sendable (Double) -> Void
     ) async throws -> SavedAudio {
-        let (infos, format, url) = try await audioStream(for: video)
+        let (infos, format, url, selectedUserAgent) = try await audioStream(for: video)
         var request = URLRequest(url: url)
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(selectedUserAgent, forHTTPHeaderField: "User-Agent")
         // YouTube throttles audio-only downloads that don't request an explicit range.
         if let length = format.contentLength {
-            request.setValue("bytes=0-\(length)", forHTTPHeaderField: "Range")
+            request.setValue("bytes=0-\(max(length - 1, 0))", forHTTPHeaderField: "Range")
         }
         // Read the audio as it arrives and count the bytes, so the progress bar moves during
         // the download rather than jumping from 0% to done.
