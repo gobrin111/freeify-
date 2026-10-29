@@ -126,6 +126,8 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private var stream: AVPlayer?
     private var streamStatus: NSKeyValueObservation?
     private var streamEnd: NSObjectProtocol?
+    private var streamLoadTask: Task<Void, Never>?
+    private var prepareTask: Task<Void, Never>?
     // Bumped whenever a new song opens, so late stream callbacks for an old song are ignored.
     private var openGeneration = 0
     // A streamed song's length as YouTube Music lists it. YouTube's audio streams can report
@@ -179,6 +181,8 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     deinit {
+        streamLoadTask?.cancel()
+        prepareTask?.cancel()
         timer?.invalidate()
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         if let streamEnd { NotificationCenter.default.removeObserver(streamEnd) }
@@ -451,14 +455,16 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // Resolve the stream link, then start playback if play was pressed meanwhile.
     private func loadStream(_ song: SongResult, generation: Int) {
-        Task { @MainActor in
+        streamLoadTask?.cancel()
+        streamLoadTask = Task { @MainActor in
             do {
                 let (asset, loudness) = try await YouTubeSource.previewAsset(videoID: song.id)
+                try Task.checkCancellation()
                 guard generation == openGeneration else { return }
                 let item = AVPlayerItem(asset: asset)
                 attachStream(AVPlayer(playerItem: item), item: item, loudness: loudness, generation: generation)
             } catch {
-                guard generation == openGeneration else { return }
+                guard !Task.isCancelled, generation == openGeneration else { return }
                 streamFailed(YouTubeSource.describe(error))
             }
         }
@@ -514,11 +520,12 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         discardPrepared()
         preparingID = next.id
         attemptedPrepareID = next.id
-        Task { @MainActor in
+        prepareTask = Task { @MainActor in
             guard let found = try? await YouTubeSource.previewAsset(videoID: song.id),
+                  !Task.isCancelled,
                   preparingID == next.id
             else {
-                if preparingID == next.id { preparingID = nil }
+                if !Task.isCancelled, preparingID == next.id { preparingID = nil }
                 return
             }
             preparingID = nil
@@ -537,6 +544,8 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func discardPrepared() {
+        prepareTask?.cancel()
+        prepareTask = nil
         prepared?.player.pause()
         prepared = nil
         preparingID = nil
@@ -565,10 +574,12 @@ final class LocalPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func streamFailed(_ details: String) {
         isLoading = false
         pause()
-        errorMessage = "Couldn’t stream “\(title)”. Check your connection, or try another song.\n\nDetails: \(details)"
+        errorMessage = "Couldn’t stream “\(title)”.\n\n\(details)"
     }
 
     private func unloadStream() {
+        streamLoadTask?.cancel()
+        streamLoadTask = nil
         stream?.pause()
         stream = nil
         streamStatus = nil

@@ -314,6 +314,8 @@ final class PreviewPlayer: ObservableObject {
     private var player: AVPlayer?
     private var statusObservation: NSKeyValueObservation?
     private var endObserver: NSObjectProtocol?
+    private var loadTask: Task<Void, Never>?
+    private var generation = 0
 
     func toggle(_ song: SongResult) {
         if songID == song.id {
@@ -324,6 +326,9 @@ final class PreviewPlayer: ObservableObject {
     }
 
     func stop() {
+        generation += 1
+        loadTask?.cancel()
+        loadTask = nil
         player?.pause()
         player = nil
         statusObservation = nil
@@ -335,41 +340,47 @@ final class PreviewPlayer: ObservableObject {
 
     private func start(_ song: SongResult) {
         stop()
+        errorMessage = nil
+        let requestGeneration = generation
         songID = song.id
         isLoading = true
-        Task { @MainActor in
+        loadTask = Task { @MainActor in
             do {
                 let (asset, loudness) = try await YouTubeSource.previewAsset(videoID: song.id)
                 // Stopped, or another song picked, while the link loaded.
-                guard songID == song.id else { return }
+                try Task.checkCancellation()
+                guard requestGeneration == generation else { return }
                 let session = AVAudioSession.sharedInstance()
                 try session.setCategory(.playback, mode: .default)
                 try session.setActive(true)
                 let item = AVPlayerItem(asset: asset)
-                statusObservation = item.observe(\.status) { [weak self] item, _ in
+                statusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                     let status = item.status
                     let details = item.error?.localizedDescription ?? "unknown"
                     Task { @MainActor [weak self] in
-                        guard let self, self.songID == song.id else { return }
+                        guard let self, requestGeneration == self.generation else { return }
                         if status == .readyToPlay {
                             self.isLoading = false
                         } else if status == .failed {
                             self.stop()
-                            self.errorMessage = "This preview couldn’t play. You can still download the song.\n\nDetails: \(details)"
+                            self.errorMessage = "This preview couldn’t play. Downloads may also be affected.\n\nDetails: \(details)"
                         }
                     }
                 }
                 endObserver = NotificationCenter.default.addObserver(
                     forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
                 ) { [weak self] _ in
-                    Task { @MainActor [weak self] in self?.stop() }
+                    Task { @MainActor [weak self] in
+                        guard let self, requestGeneration == self.generation else { return }
+                        self.stop()
+                    }
                 }
                 let player = AVPlayer(playerItem: item)
                 player.volume = VolumeMatch.volume(forLoudness: loudness)
                 self.player = player
                 player.play()
             } catch {
-                guard songID == song.id else { return }
+                guard !Task.isCancelled, requestGeneration == generation else { return }
                 stop()
                 errorMessage = YouTubeSource.describe(error)
             }
@@ -397,11 +408,17 @@ enum YouTubeSource {
     // Client settings follow yt-dlp's visionos client.
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
 
-    private static let model: YouTubeModel = {
+    private static let visitorSession = YouTubeVisitorSession()
+    private static let languageCode = YouTubeModel().selectedLocaleLanguageCode
+
+    // A model belongs to one lookup; concurrent requests cannot change its visitor ID.
+    private static func makeModel(visitorData: String) throws -> YouTubeModel {
         let model = YouTubeModel()
+        model.visitorData = visitorData
+        let visitorJSON = String(decoding: try JSONEncoder().encode(visitorData), as: UTF8.self)
         // YouTubeKit's default iOS client needs a proof-of-origin token Freeify can't create,
-        // so its audio links return HTTP 403. The visionOS client's links work without one
-        // and without running YouTube's JavaScript player.
+        // so its audio links can return HTTP 403. This existing client configuration is
+        // still unofficial and can also require verification or refuse a particular song.
         model.customHeaders[.videoInfosWithDownloadFormats] = HeadersList(
             url: URL(string: "https://www.youtube.com/youtubei/v1/player")!,
             method: .POST,
@@ -415,13 +432,13 @@ enum YouTubeSource {
             customHeaders: ["X-Goog-Visitor-Id": .visitorData],
             addQueryAfterParts: [.init(index: 0, encode: false, content: .query)],
             httpBody: [
-                #"{"contentCheckOk":true,"racyCheckOk":true,"context":{"client":{"clientName":"VISIONOS","clientVersion":"1.02","deviceMake":"Apple","deviceModel":"RealityDevice17,1","osName":"visionOS","osVersion":"26.5.23O471","hl":"en","userAgent":"\#(YouTubeSource.userAgent)"}},"playbackContext":{"contentPlaybackContext":{"html5Preference":"HTML5_PREF_WANTS"}},"videoId":""#,
+                #"{"contentCheckOk":true,"racyCheckOk":true,"context":{"client":{"clientName":"VISIONOS","clientVersion":"1.02","deviceMake":"Apple","deviceModel":"RealityDevice17,1","osName":"visionOS","osVersion":"26.5.23O471","hl":"en","visitorData":\#(visitorJSON),"userAgent":"\#(YouTubeSource.userAgent)"}},"playbackContext":{"contentPlaybackContext":{"html5Preference":"HTML5_PREF_WANTS"}},"videoId":""#,
                 #""}"#
             ],
             parameters: [.init(name: "prettyPrint", content: "false")]
         )
         return model
-    }()
+    }
 
     // Search YouTube Music's Songs tab, the way ytmusicapi does, so results are songs
     // with their real artist instead of every kind of YouTube video.
@@ -457,32 +474,37 @@ enum YouTubeSource {
 
     // A request to one of YouTube Music's web endpoints (search, browse, next).
     static func musicRequest(_ endpoint: String, urlSuffix: String = "", body extraBody: [String: Any]) async throws -> Any {
+        try Task.checkCancellation()
+        let visitorData = await visitorSession.current
         var request = URLRequest(url: URL(string: "https://music.youtube.com/youtubei/v1/\(endpoint)?prettyPrint=false\(urlSuffix)")!)
+        request.timeoutInterval = 30
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
-        if !model.visitorData.isEmpty {
-            request.setValue(model.visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
+        if !visitorData.isEmpty {
+            request.setValue(visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")
         }
         var body = extraBody
-        body["context"] = ["client": [
+        var client: [String: Any] = [
             "clientName": "WEB_REMIX",
             "clientVersion": musicClientVersion(),
-            "hl": model.selectedLocaleLanguageCode,
+            "hl": languageCode,
             "gl": Locale.current.region?.identifier ?? "US" // charts and new releases for your country
-        ]]
+        ]
+        if !visitorData.isEmpty { client["visitorData"] = visitorData }
+        body["context"] = ["client": client]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        try Task.checkCancellation()
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 429 {
+            throw SourceError(errorDescription: "YouTube is limiting requests. Wait before trying again. Saved songs still play offline.")
+        }
         guard (200...299).contains(status), let json = try? JSONSerialization.jsonObject(with: data) else {
             throw SourceError(errorDescription: "YouTube Music didn’t respond (HTTP \(status)). Try again in a moment.")
         }
-        // Downloads without a visitor ID hit YouTube's bot check, reported as "Login is required".
-        // Keep the first one so searches stay consistent.
-        if model.visitorData.isEmpty, let visitorData = dig(json, "responseContext", "visitorData") as? String {
-            model.visitorData = visitorData
-        }
+        await visitorSession.record(dig(json, "responseContext", "visitorData") as? String, replacing: visitorData)
         return json
     }
 
@@ -616,7 +638,17 @@ enum YouTubeSource {
     private static func audioStream(
         for video: YTVideo
     ) async throws -> (infos: VideoInfosWithDownloadFormatsResponse, format: AudioOnlyFormat, url: URL) {
-        let infos = try await video.fetchStreamingInfosWithDownloadFormatsThrowing(youtubeModel: model)
+        // Discover and saved recommendations can start playback before any search/browse.
+        // Bootstrap through a normal public browse request, once for concurrent callers.
+        let visitorData = try await visitorSession.prepare {
+            let json = try await musicRequest("browse", body: ["browseId": "FEmusic_home"])
+            return dig(json, "responseContext", "visitorData") as? String ?? ""
+        }
+        try Task.checkCancellation()
+        let infos = try await video.fetchStreamingInfosWithDownloadFormatsThrowing(
+            youtubeModel: makeModel(visitorData: visitorData)
+        )
+        try Task.checkCancellation()
         let format = infos.downloadFormats
             .compactMap { $0 as? AudioOnlyFormat }
             .filter { $0.mimeType == "audio/mp4" && $0.url != nil && !$0.isDrc }
@@ -736,6 +768,9 @@ enum YouTubeSource {
         if let error = error as? SourceError {
             return error.errorDescription ?? "Something went wrong."
         }
+        if let error = error as? YouTubeVisitorSession.SessionError {
+            return error.localizedDescription
+        }
         if let error = error as? URLError,
            [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost,
             .cannotConnectToHost, .dataNotAllowed].contains(error.code) {
@@ -743,8 +778,11 @@ enum YouTubeSource {
         }
         let details = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         let message: String
-        if details.contains("Login is required") {
-            message = "YouTube wants a sign-in for this song. It may be age-restricted, or YouTube’s bot check kicked in. Try another version of the song, or try again later."
+        if details.localizedCaseInsensitiveContains("Login is required")
+            || details.localizedCaseInsensitiveContains("LOGIN_REQUIRED")
+            || details.localizedCaseInsensitiveContains("sign in")
+            || details.localizedCaseInsensitiveContains("not a bot") {
+            message = "YouTube requires sign-in or verification for this request. Freeify can’t complete that check. Open the song in YouTube to listen there, or try Freeify later. Saved songs still play offline."
         } else if details.localizedCaseInsensitiveContains("unavailable") {
             message = "This song isn’t available on YouTube right now. Try another version of it."
         } else {

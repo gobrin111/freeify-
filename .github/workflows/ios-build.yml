@@ -8,6 +8,7 @@ on:
     paths:
       - 'Freeify/**'
       - 'Freeify.xcodeproj/**'
+      - 'Tests/**'
       - '.github/workflows/ios-build.yml'
   workflow_dispatch:
 
@@ -37,6 +38,16 @@ jobs:
           xcodebuild -version
           plutil -lint Freeify/Info.plist Freeify.xcodeproj/project.pbxproj
           xcodebuild -list -project Freeify.xcodeproj
+
+      - name: Check YouTube session lifecycle
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcrun swiftc -swift-version 5 -parse-as-library \
+            Freeify/YouTubeVisitorSession.swift \
+            Tests/YouTubeVisitorSessionChecks.swift \
+            -o build/session-checks
+          build/session-checks
 
       - name: Build unsigned iPhone app
         run: |

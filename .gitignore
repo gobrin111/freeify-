@@ -7,3 +7,6 @@ xcuserdata/
 *.p12
 *.mobileprovision
 
+
+# Design reference screenshots (copyrighted; kept local)
+designReferences/

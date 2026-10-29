@@ -169,7 +169,7 @@ weights on the held-back events and runs the mixes, and Settings shows what it l
 - [ ] 🔨 Character motifs: hair slash on section titles, armor-cut corner on primary buttons and mix covers, octagonal play button, armor brackets around Now Playing art
 - [ ] 🔨 Song rows: 48 pt covers, playing marker and indicator, status chips, and a More button on every row
 - [x] Motion: a one-time "Saved" check and light tap when a download completes, 180 ms fades for the current song and shuffle/repeat; all static with Reduce Motion
-- [ ] 🔨 Optional motifs: loose arc and stepped zigzag line in the empty-library illustration
+- [ ] 🔨 Optional motifs: loose arc and a hanging zigzag braid (tapering and fading, per the full-body reference) in the empty-library illustration
 - [ ] 🔨 Mini player, Now Playing, queue, and Discover restyled; Library is the landing tab; Settings tab with storage and About
 - [ ] Check on the phone: 320/390/430 pt widths, large text, VoiceOver, Reduce Motion
 

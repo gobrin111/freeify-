@@ -33,6 +33,27 @@ Freeify has three tabs, with the player bar above them.
 
 There are no music service credentials, backend, or cloud library sync.
 
+### YouTube verification errors
+
+Playback establishes an anonymous visitor session before requesting audio, even
+when starting from a cached Discover list before searching. Concurrent first
+requests share that initialization, and requests use the visitor issued by
+YouTube consistently. Stopping previews or switching songs cancels obsolete
+work; late results cannot restart an old preview. This is a client-session fix,
+not a guarantee that YouTube will allow playback.
+
+If YouTube explicitly asks for sign-in or bot verification, Freeify reports that
+requirement. Opening the song in YouTube lets you listen there; signing into
+Safari or the YouTube app does not authenticate Freeify. A request limit requires
+waiting rather than repeatedly pressing Play. Saved audio still works offline.
+
+The Mac workflow runs session regression checks before building. To verify on the
+phone: relaunch Freeify, play from a cached Discover list before searching, then
+test a search preview and a download. Also stop and restart the same preview
+quickly and switch songs while loading; old results must not take over playback.
+If verification persists, capture the exact error details and whether downloading
+that same song also fails. These device checks remain unverified for this patch.
+
 Requires iOS 17 or newer. The build uses the Xcode version installed by default
 on GitHub's `macos-15` runner and prints that version in its log. The app uses
 Swift 5 language mode with the installed Swift compiler.

@@ -129,7 +129,7 @@ struct ArmorBrackets: View {
 }
 
 // The empty-state illustration: an armor panel with the hair slash, the loose arc of the
-// narrow strand above the hair, and the stepped zigzag strand. Empty states only, never
+// narrow strand above the hair, and the hanging zigzag braid. Empty states only, never
 // as a text underline.
 struct EmptyStateMark: View {
     var body: some View {
@@ -144,13 +144,35 @@ struct EmptyStateMark: View {
                 .stroke(Palette.hair, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .frame(width: 70, height: 20)
                 .offset(x: 24, y: 0)
-            SVGShape(path: "M0 6 L6 6 L6 0 L12 0 L12 6 L18 6 L18 0 L24 0", viewBox: 24)
-                .stroke(Palette.borderControl, style: StrokeStyle(lineWidth: 2, lineJoin: .bevel))
-                .frame(width: 24, height: 24)
-                .offset(x: 0, y: 82)
+            ZigzagStrand()
+                .stroke(
+                    LinearGradient(colors: [Palette.hair, Palette.hair.opacity(0.15)], startPoint: .top, endPoint: .bottom),
+                    style: StrokeStyle(lineWidth: 2, lineJoin: .bevel)
+                )
+                .frame(width: 16, height: 64)
+                .offset(x: 4, y: 36)
         }
         .frame(width: 135, height: 110, alignment: .topLeading)
         .accessibilityHidden(true)
+    }
+}
+
+// The zigzag braid from the full-body reference: sharp points that narrow toward the tip.
+struct ZigzagStrand: Shape {
+    var points = 9
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for index in 0...points {
+            let progress = CGFloat(index) / CGFloat(points)
+            let swing = rect.width / 2 * (1 - progress * 0.7)
+            let point = CGPoint(
+                x: rect.midX + (index.isMultiple(of: 2) ? -swing : swing),
+                y: rect.minY + rect.height * progress
+            )
+            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        return path
     }
 }
 

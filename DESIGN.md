@@ -24,7 +24,7 @@ Deliver reusable themed components, all documented states, and a working small-s
 | Pale yellow-green mask illumination in the dark reference | Small confirmation light | Saved/offline-ready status only |
 | Segmented mask and forearm plates | Two or three offset geometric pieces | Download tray, queue icon, artwork corner brackets |
 | Narrow curved strand above the hair | Single loose arc | Optional empty-state illustration only |
-| Zigzag strand visible in the wider reference | Restrained stepped line | Optional empty-state accent; never text underline |
+| Zigzag strand visible in the wider reference | Restrained tapered zigzag line, fading toward the tip | Optional empty-state accent; never text underline |
 
 The visual character is expressive, angular, mechanical, and playful. Keep the content calm. No generic neon city backgrounds, random circuit boards, glitching labels, or dense fake diagnostics.
 
@@ -239,6 +239,11 @@ No hardcoded accent values scattered throughout screens. Do not use screenshots 
 ## 12. Reference assets
 
 The provided files guide visual interpretation; they are not required runtime assets:
+
+- `designReferences/full-body.png`: full silhouette; the thin arc strand above the head, and the zigzag braid as sharp pink segments that narrow and fade toward the tip.
+- `designReferences/face-closeup.png`: segmented dark mask with a red-orange cut, layered forearm plates, and the zigzag braid in motion.
+
+Earlier references, not in the repository:
 
 - `images.jpg`: warm-lit palette, pale angular hair, dark jacket, orange glove and collar details.
 - `talia-from-cyber-punk-edge-runners-2-v0-40p8fm5vjwwh1.webp`: pointed hair, layered face geometry, cyan mechanical light.
