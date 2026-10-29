@@ -4,6 +4,14 @@ import SwiftUI
 @main
 @MainActor
 struct FreeifyApp: App {
+    init() {
+        // Freeify never signs in, so it keeps no YouTube cookies: a session YouTube
+        // flagged earlier can't follow later requests. Visitor IDs are sent explicitly.
+        let cookieStore = HTTPCookieStorage.shared
+        cookieStore.cookieAcceptPolicy = .never
+        cookieStore.cookies?.forEach(cookieStore.deleteCookie)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
