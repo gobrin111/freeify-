@@ -10,3 +10,7 @@ xcuserdata/
 
 # Design reference screenshots (copyrighted; kept local)
 designReferences/
+
+# Python tool environments (tools/youtube_tester)
+.venv/
+__pycache__/

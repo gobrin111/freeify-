@@ -39,8 +39,9 @@ client settings first. No server may be introduced to make this work.
 
 Try these in order. Each is `[ ]` until it is needed and then checked on the phone.
 
-- [ ] **Diagnose first.** Compare against current yt-dlp from the PC on the same
-  network (`--extractor-args "youtube:player_client=visionos"`). Test the phone on
+- [ ] **Diagnose first** with the YouTube tester (`tools/youtube_tester`, see README):
+  `check_playback` on a failing song, then `ytdlp_compare` against current yt-dlp from
+  the PC on the same network. Test the phone on
   home Wi-Fi and on cellular with VPNs off. Check whether the phone uses IPv6
   (`api64.ipify.org` in Safari, Private Relay off); the PC is IPv4-only, and if
   only IPv6 is blocked, force IPv4 for YouTube requests

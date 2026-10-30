@@ -90,24 +90,40 @@ If a build fails, open the failing step and download the build diagnostics
 artifact. A local configuration check is not proof that the Swift app compiles;
 each updated version still needs a successful Mac build before device testing.
 
-### Agent-assisted builds
+### Builds with Claude Code
 
-The repository skill [.agents/skills/freeify-build/SKILL.md](.agents/skills/freeify-build/SKILL.md)
-guides Codex through finding the correct build, inspecting failures, and downloading
-the resulting package. Open this `freeify-` directory as the Codex project to make
-the repository skill discoverable, then request `$freeify-build`. From the parent
-directory, ask Codex to read the skill at that path explicitly.
+The skill [.claude/skills/freeify-build](.claude/skills/freeify-build/SKILL.md)
+(`/freeify-build`) finds the build for a commit, waits for it, shows the failing
+step if it breaks, and downloads the IPA to Windows:
 
-One-time prerequisites are working GitHub access and CLI authentication in the
-environment running Codex, plus GitHub Actions enabled for this repository.
-Authenticate through the browser with the command above; do not send credentials
-in chat. A skill supplies instructions, not a background agent: GitHub runs builds
-after pushes even when Codex is closed, while investigation and fixes require an
-active Codex task.
+- `C:\Users\Qi\Freeify-builds\<run number>\Freeify-unsigned.ipa`
+- `C:\Users\Qi\Freeify-builds\Freeify-latest.ipa`, always the newest, for iloader
 
-These changes automate compilation only. An AltStore update source and TestFlight
-delivery are not configured. Phone installation remains a separate setup step;
-an unsigned artifact is not evidence of an installed or tested app.
+Its script, `fetch_ipa.sh [commit]`, also runs on its own from WSL. It checks that
+the download is a valid package whose build number matches the run, and keeps the
+five newest builds. It needs `gh` signed in (command above). Installing stays manual
+with iloader; a downloaded IPA is not evidence of an installed or tested app.
+
+### YouTube tester (for Claude Code)
+
+`tools/youtube_tester/server.py` is a local MCP server that sends Freeify's exact
+YouTube requests from the PC: `search_songs`, `visitor_id`, `check_playback`
+(YouTube's status and reason, the audio formats Freeify would use, and a first-byte
+check of the audio URL), `ytdlp_compare`, and `network_info`. Use it first when
+playback breaks; `ROADMAP.md` lists what to try after. Its request values mirror
+`Freeify/YouTubeSearch.swift` (the `SYNC` block): change both together. It is a
+developer tool on the PC; the app never depends on it.
+
+Setup, once (already registered for this user):
+
+```
+cd tools/youtube_tester
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+claude mcp add --scope user freeify-youtube-tester -- "$PWD/.venv/bin/python" "$PWD/server.py"
+```
+
+Update its yt-dlp now and then (`.venv/bin/pip install -U "yt-dlp[default]"`) so
+`ytdlp_compare` reflects YouTube's current state.
 
 ## Install on your iPhone
 
