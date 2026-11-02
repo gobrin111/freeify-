@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 // Plain grouped settings showing real values: storage, and About with the Freeify logo.
 struct SettingsView: View {
@@ -7,6 +8,7 @@ struct SettingsView: View {
     @Query private var playlists: [Playlist]
     @State private var storageBytes: Int64 = 0
     @State private var ranker = Ranker.loadStatus()
+    @State private var libraryFiles = ""
     @AppStorage(Ranker.enabledKey) private var learnedRanker = true
     @AppStorage(VolumeMatch.enabledKey) private var matchVolume = true
 
@@ -76,6 +78,19 @@ struct SettingsView: View {
                     Text("A personal music player. Search and downloads use YouTube Music unofficially and can stop working when YouTube changes.")
                         .foregroundStyle(Palette.textMuted)
                 }
+                // Temporary, while recovering the library after switching signing tools.
+                Section {
+                    Text(libraryFiles)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Palette.textSecondary)
+                        .textSelection(.enabled)
+                        .listRowBackground(Palette.surface)
+                    Button("Copy") { UIPasteboard.general.string = libraryFiles }
+                        .frame(minHeight: Spacing.target)
+                        .listRowBackground(Palette.surface)
+                } header: {
+                    SectionTitle(title: "Library files").textCase(nil)
+                }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -84,7 +99,10 @@ struct SettingsView: View {
             .task(id: tracks.map { "\($0.filename)\($0.isDownloaded)" }) {
                 storageBytes = AudioFiles.usedBytes()
             }
-            .onAppear { ranker = Ranker.loadStatus() }
+            .onAppear {
+                ranker = Ranker.loadStatus()
+                libraryFiles = LibraryRecovery.report()
+            }
         }
     }
 

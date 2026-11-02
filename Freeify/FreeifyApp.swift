@@ -1,3 +1,4 @@
+import SQLite3
 import SwiftData
 import SwiftUI
 
@@ -18,8 +19,8 @@ struct FreeifyApp: App {
         // an app group container when the sideloading tool adds one, which showed an empty
         // library while the songs were still on the phone.
         let schema = Schema([Track.self, Playlist.self, ListenEvent.self, RecommendationEvent.self])
-        let storeURL = URL.applicationSupportDirectory.appendingPathComponent("default.store")
-        Self.recoverAppGroupLibrary(to: storeURL)
+        let storeURL = LibraryRecovery.storeURL
+        LibraryRecovery.recoverFromAppGroups()
         let saved = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
         do {
             container = try ModelContainer(for: schema, configurations: saved)
@@ -30,39 +31,6 @@ struct FreeifyApp: App {
             container = try! ModelContainer(for: schema, configurations: empty)
             libraryError = "Freeify couldn't open your saved library, so it looks empty for now. "
                 + "Your songs are still on the phone; don't delete the app. (\(error.localizedDescription))"
-        }
-    }
-
-    // iloader signs apps with the app group "group.<bundle ID>", so SwiftData kept the library
-    // in that group's container; SideStore doesn't add the group. When the app can see that
-    // container (installed by iloader), copy its library to the fixed path once. The copy in
-    // the group container stays as a backup, and the store it replaces is kept beside it.
-    private static func recoverAppGroupLibrary(to storeURL: URL) {
-        let manager = FileManager.default
-        let marker = URL.applicationSupportDirectory.appendingPathComponent("library-recovered")
-        guard !manager.fileExists(atPath: marker.path),
-              let bundleID = Bundle.main.bundleIdentifier,
-              let group = manager.containerURL(forSecurityApplicationGroupIdentifier: "group.\(bundleID)")
-        else { return }
-        let oldStore = group.appendingPathComponent("Library/Application Support/default.store")
-        guard manager.fileExists(atPath: oldStore.path) else { return }
-        do {
-            try manager.createDirectory(at: URL.applicationSupportDirectory, withIntermediateDirectories: true)
-            for suffix in ["", "-wal", "-shm"] {
-                let source = URL(fileURLWithPath: oldStore.path + suffix)
-                let destination = URL(fileURLWithPath: storeURL.path + suffix)
-                let aside = URL(fileURLWithPath: storeURL.path + ".before-recovery" + suffix)
-                if manager.fileExists(atPath: destination.path) {
-                    try? manager.removeItem(at: aside)
-                    try manager.moveItem(at: destination, to: aside)
-                }
-                if manager.fileExists(atPath: source.path) {
-                    try manager.copyItem(at: source, to: destination)
-                }
-            }
-            manager.createFile(atPath: marker.path, contents: nil)
-        } catch {
-            // Leave the marker unwritten so the next launch tries again.
         }
     }
 
@@ -167,4 +135,129 @@ private struct PlayerBarPlacement: ViewModifier {
             .toolbarBackground(Palette.surface, for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
     }
+}
+
+// Signing tools decide where SwiftData's default library goes: iloader adds an app group and
+// SideStore doesn't, so after switching tools the library looked empty while the songs were
+// still on the phone. Freeify now keeps the library at a fixed path, copies it back from any
+// app group it can see, and Settings shows where every library file is.
+enum LibraryRecovery {
+    static let storeURL = URL.applicationSupportDirectory.appendingPathComponent("default.store")
+
+    // When this library has no songs and an app group's library does, copy that one here.
+    // The group's copy stays, and the store it replaces is kept beside it.
+    static func recoverFromAppGroups() {
+        guard (songCount(at: storeURL) ?? 0) == 0 else { return }
+        let manager = FileManager.default
+        for (_, container) in groupContainers() {
+            let source = container.appendingPathComponent("Library/Application Support/default.store")
+            guard (songCount(at: source) ?? 0) > 0 else { continue }
+            do {
+                try manager.createDirectory(at: URL.applicationSupportDirectory, withIntermediateDirectories: true)
+                for suffix in ["", "-wal", "-shm"] {
+                    let from = URL(fileURLWithPath: source.path + suffix)
+                    let to = URL(fileURLWithPath: storeURL.path + suffix)
+                    let aside = URL(fileURLWithPath: storeURL.path + ".before-recovery" + suffix)
+                    if manager.fileExists(atPath: to.path) {
+                        try? manager.removeItem(at: aside)
+                        try manager.moveItem(at: to, to: aside)
+                    }
+                    if manager.fileExists(atPath: from.path) {
+                        try manager.copyItem(at: from, to: to)
+                    }
+                }
+            } catch {}
+            return
+        }
+    }
+
+    // For Settings: the bundle ID, the app groups this install was signed with, and every
+    // library file Freeify can reach, with its size and song count.
+    static func report() -> String {
+        let manager = FileManager.default
+        var lines = [
+            "Bundle ID: \(Bundle.main.bundleIdentifier ?? "none")",
+            "Signed app groups: \(signedGroups().joined(separator: ", ").nonEmpty ?? "none")",
+            "App:",
+        ]
+        lines += storeFiles(under: URL(fileURLWithPath: NSHomeDirectory()))
+        let audio = (try? manager.contentsOfDirectory(atPath: AudioFiles.directory.path)) ?? []
+        lines.append("  Audio: \(audio.filter { !$0.hasSuffix(".jpg") }.count) songs")
+        for id in candidateGroups() {
+            if let container = manager.containerURL(forSecurityApplicationGroupIdentifier: id) {
+                lines.append("\(id):")
+                lines += storeFiles(under: container)
+            } else {
+                lines.append("\(id): no access")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func candidateGroups() -> [String] {
+        var ids = signedGroups()
+        if let bundleID = Bundle.main.bundleIdentifier, !ids.contains("group.\(bundleID)") {
+            ids.append("group.\(bundleID)")
+        }
+        return ids
+    }
+
+    private static func groupContainers() -> [(String, URL)] {
+        candidateGroups().compactMap { id in
+            FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id).map { (id, $0) }
+        }
+    }
+
+    // The app groups in the provisioning profile the signing tool embedded.
+    private static func signedGroups() -> [String] {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url),
+              let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+              let profile = try? PropertyListSerialization.propertyList(
+                  from: data[start.lowerBound..<end.upperBound], format: nil) as? [String: Any],
+              let entitlements = profile["Entitlements"] as? [String: Any]
+        else { return [] }
+        return entitlements["com.apple.security.application-groups"] as? [String] ?? []
+    }
+
+    // Library files (names containing ".store") under a folder, skipping the audio.
+    private static func storeFiles(under base: URL) -> [String] {
+        guard let files = FileManager.default.enumerator(at: base, includingPropertiesForKeys: [.fileSizeKey])
+        else { return ["  can't read"] }
+        var lines: [String] = []
+        for case let file as URL in files {
+            if file.lastPathComponent == "Audio" { files.skipDescendants(); continue }
+            let name = file.lastPathComponent
+            guard name.contains(".store") else { continue }
+            let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize).map {
+                ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
+            } ?? "?"
+            let path = file.path.replacingOccurrences(of: base.path + "/", with: "")
+            var line = "  \(path) \(size)"
+            if !name.hasSuffix("-wal"), !name.hasSuffix("-shm") {
+                line += songCount(at: file).map { ", \($0) songs" } ?? ", unreadable"
+            }
+            lines.append(line)
+        }
+        return lines.isEmpty ? ["  no library files"] : lines
+    }
+
+    // Songs in a library file, read directly so it works for stores SwiftData isn't using.
+    static func songCount(at url: URL) -> Int? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        var db: OpaquePointer?
+        defer { sqlite3_close(db) }
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return nil }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM ZTRACK", -1, &statement, nil) == SQLITE_OK,
+              sqlite3_step(statement) == SQLITE_ROW
+        else { return nil }
+        return Int(sqlite3_column_int64(statement, 0))
+    }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
