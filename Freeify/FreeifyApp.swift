@@ -18,11 +18,9 @@ struct FreeifyApp: App {
         // an app group container when the sideloading tool adds one, which showed an empty
         // library while the songs were still on the phone.
         let schema = Schema([Track.self, Playlist.self, ListenEvent.self, RecommendationEvent.self])
-        let saved = ModelConfiguration(
-            schema: schema,
-            url: URL.applicationSupportDirectory.appendingPathComponent("default.store"),
-            cloudKitDatabase: .none
-        )
+        let storeURL = URL.applicationSupportDirectory.appendingPathComponent("default.store")
+        Self.recoverAppGroupLibrary(to: storeURL)
+        let saved = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
         do {
             container = try ModelContainer(for: schema, configurations: saved)
             libraryError = nil
@@ -32,6 +30,39 @@ struct FreeifyApp: App {
             container = try! ModelContainer(for: schema, configurations: empty)
             libraryError = "Freeify couldn't open your saved library, so it looks empty for now. "
                 + "Your songs are still on the phone; don't delete the app. (\(error.localizedDescription))"
+        }
+    }
+
+    // iloader signs apps with the app group "group.<bundle ID>", so SwiftData kept the library
+    // in that group's container; SideStore doesn't add the group. When the app can see that
+    // container (installed by iloader), copy its library to the fixed path once. The copy in
+    // the group container stays as a backup, and the store it replaces is kept beside it.
+    private static func recoverAppGroupLibrary(to storeURL: URL) {
+        let manager = FileManager.default
+        let marker = URL.applicationSupportDirectory.appendingPathComponent("library-recovered")
+        guard !manager.fileExists(atPath: marker.path),
+              let bundleID = Bundle.main.bundleIdentifier,
+              let group = manager.containerURL(forSecurityApplicationGroupIdentifier: "group.\(bundleID)")
+        else { return }
+        let oldStore = group.appendingPathComponent("Library/Application Support/default.store")
+        guard manager.fileExists(atPath: oldStore.path) else { return }
+        do {
+            try manager.createDirectory(at: URL.applicationSupportDirectory, withIntermediateDirectories: true)
+            for suffix in ["", "-wal", "-shm"] {
+                let source = URL(fileURLWithPath: oldStore.path + suffix)
+                let destination = URL(fileURLWithPath: storeURL.path + suffix)
+                let aside = URL(fileURLWithPath: storeURL.path + ".before-recovery" + suffix)
+                if manager.fileExists(atPath: destination.path) {
+                    try? manager.removeItem(at: aside)
+                    try manager.moveItem(at: destination, to: aside)
+                }
+                if manager.fileExists(atPath: source.path) {
+                    try manager.copyItem(at: source, to: destination)
+                }
+            }
+            manager.createFile(atPath: marker.path, contents: nil)
+        } catch {
+            // Leave the marker unwritten so the next launch tries again.
         }
     }
 
