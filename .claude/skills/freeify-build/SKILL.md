@@ -8,7 +8,11 @@ description: Build Freeify on GitHub's Mac and save the unsigned IPA on the user
 Freeify can't be compiled here (Windows/WSL, no Mac). `.github/workflows/ios-build.yml`
 builds an **unsigned** IPA on `macos-15` for pushes to `main` that touch `Freeify/**`,
 `Freeify.xcodeproj/**`, `Tests/**`, or the workflow; docs-only pushes start no build.
-The user installs the IPA with iloader on Windows. Installing is theirs, not yours.
+The user installs on the phone with **SideStore**: their "Get Freeify" Shortcut downloads
+the newest successful build's artifact with a read-only GitHub token and shares it to
+SideStore (README, "Install on your iPhone"). AltServer on Windows is the backup and uses
+`Freeify-latest.ipa`. Installing is the user's taps, not yours. Builds are not published
+as a public SideStore/AltStore source or GitHub Release (the user chose this for privacy).
 
 ## Steps
 
@@ -24,7 +28,8 @@ The user installs the IPA with iloader on Windows. Installing is theirs, not you
 
    It keeps the five newest numbered builds. Override the folder with `FREEIFY_BUILDS_DIR`.
 3. **Read the exit code:**
-   - `0` saved. Give the user the run link, the build number, and the Windows path.
+   - `0` saved. Tell the user build #<number> is ready for the Get Freeify Shortcut, with the run
+     link; mention the Windows path only if they use AltServer.
    - `1` build failed (the script prints the failed step's last 60 log lines) or the IPA
      didn't check out. For compile errors, fix the code, then ask before pushing again.
      At most two fix-and-rebuild rounds per request; then report what's still failing.

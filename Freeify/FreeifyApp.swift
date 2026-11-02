@@ -4,25 +4,49 @@ import SwiftUI
 @main
 @MainActor
 struct FreeifyApp: App {
+    private let container: ModelContainer
+    private let libraryError: String?
+
     init() {
         // Freeify never signs in, so it keeps no YouTube cookies: a session YouTube
         // flagged earlier can't follow later requests. Visitor IDs are sent explicitly.
         let cookieStore = HTTPCookieStorage.shared
         cookieStore.cookieAcceptPolicy = .never
         cookieStore.cookies?.forEach(cookieStore.deleteCookie)
+
+        // The library stays at a fixed path next to Audio/. SwiftData's default moves into
+        // an app group container when the sideloading tool adds one, which showed an empty
+        // library while the songs were still on the phone.
+        let schema = Schema([Track.self, Playlist.self, ListenEvent.self, RecommendationEvent.self])
+        let saved = ModelConfiguration(
+            schema: schema,
+            url: URL.applicationSupportDirectory.appendingPathComponent("default.store"),
+            cloudKitDatabase: .none
+        )
+        do {
+            container = try ModelContainer(for: schema, configurations: saved)
+            libraryError = nil
+        } catch {
+            // Never replace the saved library; run on an empty one and say why.
+            let empty = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+            container = try! ModelContainer(for: schema, configurations: empty)
+            libraryError = "Freeify couldn't open your saved library, so it looks empty for now. "
+                + "Your songs are still on the phone; don't delete the app. (\(error.localizedDescription))"
+        }
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootView(libraryError: libraryError)
         }
-        .modelContainer(for: [Track.self, Playlist.self, ListenEvent.self, RecommendationEvent.self])
+        .modelContainer(container)
     }
 }
 
 // Discover, Search, and Library tabs, sharing one player and store.
 @MainActor
 struct RootView: View {
+    let libraryError: String?
     @Environment(\.modelContext) private var modelContext
     @StateObject private var store = LibraryStore()
     // Drawn once; the root view refreshes often while downloads report progress.
@@ -62,6 +86,7 @@ struct RootView: View {
         .tint(Palette.hair)
         .preferredColorScheme(.dark)
         .task {
+            store.errorMessage = libraryError
             store.attach(modelContext)
             restoreLastSong()
             await store.lookUpLoudness(in: modelContext)

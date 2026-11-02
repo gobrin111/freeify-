@@ -97,12 +97,12 @@ The skill [.claude/skills/freeify-build](.claude/skills/freeify-build/SKILL.md)
 step if it breaks, and downloads the IPA to Windows:
 
 - `C:\Users\Qi\Freeify-builds\<run number>\Freeify-unsigned.ipa`
-- `C:\Users\Qi\Freeify-builds\Freeify-latest.ipa`, always the newest, for iloader
+- `C:\Users\Qi\Freeify-builds\Freeify-latest.ipa`, always the newest, for AltServer
 
 Its script, `fetch_ipa.sh [commit]`, also runs on its own from WSL. It checks that
 the download is a valid package whose build number matches the run, and keeps the
-five newest builds. It needs `gh` signed in (command above). Installing stays manual
-with iloader; a downloaded IPA is not evidence of an installed or tested app.
+five newest builds, then prints the AltServer steps below. It needs `gh` signed in
+(command above). A downloaded IPA is not evidence of an installed or tested app.
 
 ### YouTube tester (for Claude Code)
 
@@ -128,16 +128,81 @@ Update its yt-dlp now and then (`.venv/bin/pip install -U "yt-dlp[default]"`) so
 ## Install on your iPhone
 
 The `.ipa` is **unsigned**. It cannot be installed merely by opening it in Files.
-Use a signing/sideloading tool such as AltStore Classic with AltServer on Windows.
-Follow the [official Windows setup instructions](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows),
-including device trust and Developer Mode. Once AltStore is installed, transfer
-the `.ipa` to your iPhone and select it with **+** in AltStore's **My Apps** tab.
+Freeify is installed on the phone with [SideStore](https://docs.sidestore.io), which
+signs it with your Apple ID and refreshes it without the PC; AltServer on Windows is
+the backup.
 
-AltServer is a local installation/refresh helper on your PC. Freeify's playback
-does not depend on it. With a free Apple account, sideloaded apps expire after
-seven days unless refreshed. Keep this in mind before extended offline travel.
-See [AltStore's refresh documentation](https://faq.altstore.io/altstore-classic/your-altstore).
-Compatibility with your exact iOS release must be checked during installation.
+### SideStore
+
+Setup, once: install **LocalDevVPN** from the App Store, install SideStore from the PC
+with [iloader](https://docs.sidestore.io/docs/installation/prerequisites), and sign
+into SideStore. If sign-in fails with -80045 (Apple's October 2026 change), set
+SideStore's anisette server to **SideStore (New)** and reset adi.pb; don't retry
+repeatedly. A free Apple ID allows three sideloaded apps, SideStore included.
+
+Turn on LocalDevVPN whenever SideStore installs or refreshes. Refresh All in SideStore's
+**My Apps** before seven days pass; saved songs stay in the app if it expires.
+
+#### "Get Freeify" Shortcut
+
+One tap downloads the newest successful build from GitHub and hands it to SideStore.
+GitHub requires a sign-in to download builds, so the Shortcut carries a token:
+
+1. On github.com: **Settings → Developer settings → Personal access tokens →
+   Fine-grained tokens → Generate new token**. Name it `Freeify Shortcut`, choose
+   **Only select repositories → freeify-**, and under Repository permissions set
+   **Actions: Read-only**. Copy the token. It lives only in the Shortcut, never in the
+   repository; it can do nothing but read builds.
+2. In the Shortcuts app, create a shortcut named **Get Freeify** with these actions:
+
+| # | Action | Settings |
+|---|---|---|
+| 1 | **Text** | the token (rename the output `Token`) |
+| 2 | **Get Contents of URL** | `https://api.github.com/repos/gobrin111/freeify-/actions/workflows/ios-build.yml/runs?branch=main&status=success&per_page=1`; Headers: `Authorization` = `Bearer ` + Token, `Accept` = `application/vnd.github+json` |
+| 3 | **Get Dictionary Value** | `workflow_runs` |
+| 4 | **Get Item from List** | First Item (rename `Run`) |
+| 5 | **Get Dictionary Value** | `run_number` in Run (rename `Number`) |
+| 6 | **Get Dictionary Value** | `artifacts_url` in Run |
+| 7 | **Text** | Dictionary Value + `?name=Freeify-unsigned-` + Number |
+| 8 | **Get Contents of URL** | Text; the same two headers |
+| 9 | **Get Dictionary Value** | `artifacts` |
+| 10 | **Get Item from List** | First Item |
+| 11 | **Get Dictionary Value** | `archive_download_url` |
+| 12 | **Get Contents of URL** | Dictionary Value; header `Authorization` = `Bearer ` + Token only |
+| 13 | **Extract Archive** | Contents of URL (gives `Freeify-unsigned.ipa`) |
+| 14 | **Save File** | to `On My iPhone/Freeify`; Ask Where to Save off, Overwrite on |
+| 15 | **Share** | Extracted file, then pick **SideStore** |
+
+3. Turn on LocalDevVPN, run **Get Freeify**, pick SideStore in the share sheet, and
+   confirm. If SideStore isn't in the share sheet, open SideStore → **My Apps → +** and
+   pick `On My iPhone/Freeify/Freeify-unsigned.ipa` (saved by step 14).
+
+If step 12 returns a short XML or 401 error instead of a zip, the redirect to GitHub's
+file storage kept the token; report it rather than retrying. Builds expire after seven
+days: with no build in that time, start one (README above), then run the Shortcut.
+GitHub lets any signed-in GitHub user download a public repository's builds; the
+Shortcut adds no new way in.
+
+### AltServer (backup, from the PC)
+
+Install from the PC with AltStore Classic's AltServer on Windows
+([setup instructions](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows),
+including iTunes and iCloud from Apple's website, device trust, Developer Mode,
+and iTunes' "Sync with this iPhone over Wi-Fi").
+
+For each new build (after `fetch_ipa.sh` saves it):
+
+1. Unlock the iPhone, on the same Wi-Fi as the PC (or plugged in).
+2. Click the AltServer icon in the Windows system tray → **Sideload .ipa…** → the iPhone.
+3. Pick `C:\Users\Qi\Freeify-builds\Freeify-latest.ipa` and wait for AltServer's done message.
+
+Use it if SideStore can't sign in or install. It needs the iPhone plugged in or on
+the same Wi-Fi with Wi-Fi sync on, and AltServer signs through Apple's own iTunes and
+iCloud for Windows. Switching signing tools can open Freeify with an empty library
+while the songs are still on the phone; Freeify keeps its library at a fixed path
+(`Application Support/default.store`) so the signing tool can't move it. Don't delete
+the app to fix it: saved audio lives inside the app. Builds are deliberately not
+published as a public SideStore or AltStore source.
 
 ## Phone checks
 

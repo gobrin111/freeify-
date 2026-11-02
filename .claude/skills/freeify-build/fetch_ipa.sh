@@ -66,9 +66,19 @@ echo "Saved Freeify $version ($build), $(du -h "$ipa" | cut -f1):"
 echo "  $(windows "$ipa")"
 # Freeify-latest.ipa only ever moves forward, so fetching an older build can't replace it.
 newest=$(ls -1 "$DEST" | grep -E '^[0-9]+$' | sort -n | tail -1)
+install="$ipa"
 if [ "$number" = "$newest" ]; then
   cp "$ipa" "$DEST/Freeify-latest.ipa"
-  echo "  $(windows "$DEST/Freeify-latest.ipa")  (same file, always the newest)"
+  install="$DEST/Freeify-latest.ipa"
+  echo "  $(windows "$install")  (same file, always the newest)"
 fi
+# The user installs on the phone with SideStore; AltServer on Windows is the backup.
+echo
+echo "On the iPhone: LocalDevVPN on, run the Get Freeify Shortcut, share to SideStore."
+echo "Or install with AltServer (iPhone unlocked, same Wi-Fi as this PC, or plugged in):"
+echo "  1. Click the AltServer icon in the Windows system tray"
+echo "  2. Sideload .ipa... -> choose the iPhone"
+echo "  3. Pick $(windows "$install")"
+echo "  4. Wait for AltServer's done message"
 ls -1 "$DEST" | grep -E '^[0-9]+$' | sort -n | head -n -"$KEEP" \
   | while read -r old; do rm -rf "${DEST:?}/$old"; done
