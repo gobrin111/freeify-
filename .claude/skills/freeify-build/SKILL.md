@@ -10,7 +10,7 @@ builds an **unsigned** IPA on `macos-15` for pushes to `main` that touch `Freeif
 `Freeify.xcodeproj/**`, `Tests/**`, or the workflow; docs-only pushes start no build.
 The user installs on the phone with **SideStore**: their "Get Freeify" Shortcut downloads
 the newest successful build's artifact with a read-only GitHub token and shares it to
-SideStore (README, "Install on your iPhone"). AltServer on Windows is the backup and uses
+SideStore (README, "How Freeify gets onto the phone"). AltServer on Windows is the backup and uses
 `Freeify-latest.ipa`. Installing is the user's taps, not yours. Builds are not published
 as a public SideStore/AltStore source or GitHub Release (the user chose this for privacy).
 

@@ -10,7 +10,7 @@ install route), update this file in the same commit.
 | `CONTEXT.md` | Where things are: every module's job, task → files, coupled changes, recent changes |
 | `ROADMAP.md` | What is built, phone-checked, or next; the YouTube-block playbook (§2) |
 | `DESIGN.md` | Every visual decision: tokens, shapes, components, motion, accessibility |
-| `README.md` | The user's how-to: features, building, installing, phone checks |
+| `README.md` | Project overview for the user: features, installing on the phone, phone checks (no development details) |
 
 ## Product
 
@@ -172,6 +172,23 @@ YouTube access is unofficial and breaks without warning.
   block). Change both together.
 - **When playback breaks**, diagnose with the `freeify-youtube-tester` MCP tools first
   (calls few and spaced), then follow ROADMAP.md §2 "If YouTube blocks playback again" in order.
+
+## Build and dev tools
+
+- **Build:** `.github/workflows/ios-build.yml` builds an unsigned IPA on `macos-15` for
+  pushes to `main` that touch `Freeify/`, `Freeify.xcodeproj/`, `Tests/`, or the workflow
+  (docs-only pushes start none). It runs the visitor-session checks first, times out after
+  20 minutes, and keeps artifacts seven days. On failure, read the failing step and the
+  diagnostics artifact. `gh` sign-in: `gh auth login --hostname github.com --web`.
+- **`/freeify-build`** (`.claude/skills/freeify-build/`): `fetch_ipa.sh [commit]` waits for
+  that commit's build, checks the IPA, and saves it to `C:\Users\Qi\Freeify-builds\<run>\`
+  and `Freeify-latest.ipa` (keeps the five newest).
+- **YouTube tester** (`tools/youtube_tester/server.py`, MCP server `freeify-youtube-tester`,
+  user scope, already registered): `search_songs`, `visitor_id`, `check_playback`,
+  `ytdlp_compare`, `network_info`. Setup from `tools/youtube_tester`:
+  `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`, then
+  `claude mcp add --scope user freeify-youtube-tester -- "$PWD/.venv/bin/python" "$PWD/server.py"`.
+  Update yt-dlp now and then: `.venv/bin/pip install -U "yt-dlp[default]"`.
 
 ## Keeping context current
 

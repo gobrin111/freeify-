@@ -37,7 +37,7 @@ responsible for, update its entry here in the same commit, and add a line to
 | Colors, shapes, motifs, button styles | `Theme.swift`, DESIGN.md |
 | Build fails, IPA download | `.github/workflows/ios-build.yml`, `.claude/skills/freeify-build/` |
 | Adding a Swift file | `tools/add_swift_file.py`, `Freeify.xcodeproj/project.pbxproj` |
-| Install, refresh, Shortcut | README.md "Install on your iPhone" |
+| Install, refresh, Shortcut | README.md "How Freeify gets onto the phone" |
 
 ## Coupled changes
 
@@ -195,6 +195,10 @@ title, artist, status chips, playing marker, Saved check), `ArtworkView`, `Artwo
 Newest first. One line per finished task: what changed and which files. Trim entries
 older than about a month once they're reflected in the index above.
 
+- 2026-11-07: README rewritten: features by tab (four tabs, Settings added), then how
+  Freeify gets onto the phone (build → Get Freeify Shortcut → SideStore, 7-day refresh,
+  AltServer backup). Development details moved from README to CLAUDE.md "Build and dev
+  tools". Docs only.
 - 2026-11-01: Build #40's recovery found nothing (iloader install, library still empty).
   `LibraryRecovery` (`FreeifyApp.swift`) now tries the signed app groups and copies only a
   library that has songs; Settings → Library files shows where library files are

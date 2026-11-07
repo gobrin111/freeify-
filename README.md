@@ -1,158 +1,123 @@
 # Freeify
 
-A personal iPhone music app written in Swift and SwiftUI: search YouTube Music,
-save songs on the phone, and play them offline, including with the screen locked.
-Progress and next steps are tracked in [ROADMAP.md](ROADMAP.md).
+A personal iPhone music app: search YouTube Music, save songs on the phone, and play
+them offline, including with the screen locked. Everything runs on the phone: no
+server, account, or cloud sync. Requires iOS 17 or newer.
+
+What's built and what's been checked on the phone: [ROADMAP.md](ROADMAP.md).
 
 ## Features
 
-Freeify has three tabs, with the player bar above them.
+Four tabs (Library, Discover, Search, Settings) with the player bar above every tab.
 
-- **Discover:** recently played songs, "Made for you" mixes built from what you
-  play, like, and save, plus YouTube Music charts, new releases, and moods &
-  genres. Play buttons in those lists play in the player, streaming songs that
-  aren't saved, and the full-screen player's "Playing from" opens the list again.
-  **Download All** saves a list's songs into a playlist with its name. Listening
-  history and recommendation feedback stay on the phone.
-- **Search:** YouTube Music's Songs tab, with cover art and more results as you
-  scroll. Play streams a preview without saving; download saves the song with its
-  cover art using [YouTubeKit](https://github.com/b5i/YouTubeKit), pinned to a
-  specific commit. Long-press a result to start a radio of similar songs. This is
-  unofficial and can break when YouTube changes; `ROADMAP.md` notes what to check
-  first.
-- **Library:** search by title or artist, sort, and see how much space saved
-  songs use. Swipe left to remove a song or only its download (YouTube songs
-  download again with a tap); select several songs from the More (…) menu. Swipe
-  right or long-press to like a song or add it to a playlist. Liked Songs and
-  Playlists are at the top. **Add from Files** copies an audio file into Freeify;
-  Freeify never scans the phone's files.
-- **Playback:** the list a song is played from becomes the queue. Next/previous,
-  shuffle, and repeat work in the app and on the lock screen. Long-press a song
-  for Play Next, Add to Queue, or Start Radio. Tap the player bar for the
-  full-screen player and queue. Shuffle, repeat, and the last song are remembered.
+### Library (the landing tab)
 
-There are no music service credentials, backend, or cloud library sync.
+- All your songs, with cover art, title, and artist; search by title or artist.
+- Sort by recently added, title, or artist.
+- **Liked Songs** and **Playlists** at the top. Create, rename, reorder, and delete
+  playlists; a song can be in many playlists without a second copy.
+- Swipe right or long-press to like a song or add it to a playlist.
+- Swipe left to **Remove Download** (the song stays listed and downloads again with a
+  tap) or **Remove** it from the library entirely.
+- **Select Songs** in the More (…) menu to remove several at once.
+- **Add music → Add from Files** copies an audio file into Freeify. Freeify never scans
+  the phone's files.
+- Storage used by saved songs, under the list.
 
-### YouTube verification errors
+### Search
 
-Playback gets its anonymous visitor ID once per app session from a youtube.com
-watch page's config, the source yt-dlp uses, even when starting from a cached
-Discover list before searching. Search and Discover keep YouTube Music's own
-visitor. In October 2026 YouTube answered "Login is required" to playback that
-used YouTube Music's visitor; the watch-page visitor fixed it on the phone.
-Concurrent first requests share that initialization. Stopping previews or
-switching songs cancels obsolete work; late results cannot restart an old preview.
-Freeify keeps no cookies, since it never signs in.
+- YouTube Music's Songs search, with cover art and more results as you scroll.
+- **Preview** streams a song without saving it; **Download** saves it with its cover
+  art. Songs you already have show "In library".
+- Long-press a result for **Start Radio** (similar songs).
 
-Requests are kept at a listening pace. The background loudness lookup for older
-downloads waits 30 seconds before each song; looking up the whole library at once
-likely set off that bot check. Avoid adding features that send YouTube bursts of
-requests.
+### Discover
 
-If YouTube explicitly asks for sign-in or bot verification, Freeify reports that
-requirement. Opening the song in YouTube lets you listen there; signing into
-Safari or the YouTube app does not authenticate Freeify. A request limit requires
-waiting rather than repeatedly pressing Play. Saved audio still works offline.
-If it happens again, `ROADMAP.md` lists what to try, in order.
+- **Recently played**.
+- **Made for you**: "Mix from *song*" and "Discover Mix", built on the phone from what
+  you play, like, skip, and save. They refresh each day or when you pull down, and can
+  still be viewed offline. Long-press → **Not Interested** removes a song.
+- YouTube Music **charts**, **new releases**, and **moods & genres**.
+- Play buttons stream songs that aren't saved. **Download All** saves a list as a
+  playlist and downloads its songs one at a time, with progress and Cancel;
+  **Download Missing** in a playlist's More (…) menu finishes an interrupted one.
 
-The Mac workflow runs session regression checks before building.
+### Playback
 
-Requires iOS 17 or newer. The build uses the Xcode version installed by default
-on GitHub's `macos-15` runner and prints that version in its log. The app uses
-Swift 5 language mode with the installed Swift compiler.
+- The list a song is played from becomes the queue. Songs that aren't saved are
+  skipped in library lists and streamed in Discover lists.
+- Next/previous, shuffle (no repeats until every song has played), and repeat
+  (off / all / one), in the app and on the lock screen.
+- Long-press a song for **Play Next** or **Add to Queue**; the queue view reorders and
+  removes songs.
+- Tap the player bar for the full-screen player: like, download, seek, queue, and
+  **Playing from …**, which reopens the list playback started from.
+- Plays with the screen locked and in airplane mode (saved songs).
+- Shuffle, repeat, and the last song (paused where it stopped) are remembered.
 
-## Build from Windows with GitHub Actions
+### Settings
 
-GitHub Actions runs the build on a temporary Mac and saves a downloadable
-artifact. Your phone does not connect to that Mac while using Freeify.
+- Storage used.
+- **Match volume** (on by default): turns louder songs down to the same level using
+  YouTube's loudness for each song.
+- **Recommendations**: which ranker is in use, what it has learned, and a
+  **Learn from my feedback** switch.
+- About, and **Library files** (temporary: where the library database is, for
+  diagnosing an empty library).
 
-1. Commit and push these files to the repository's default branch, `main`.
-2. App, Xcode project, and build-workflow changes automatically start a build.
-   Open [this repository's Actions tab](https://github.com/gobrin111/freeify-/actions).
-3. To build manually instead, choose **Build Freeify for iPhone**, then
-   **Run workflow** on `main`. Avoid starting a second build for the same push.
-4. Open the completed run. A successful run has a green check.
-5. Under **Artifacts**, download `Freeify-unsigned-<run number>`.
-6. Extract the downloaded ZIP to get `Freeify-unsigned.ipa`.
+### Privacy
 
-If using the GitHub CLI, authenticate in your terminal with
-`gh auth login --hostname github.com --web`. Never put account passwords, tokens,
-or signing certificates into the repository. The build needs no Apple account
-or repository secrets because signing happens when you sideload it.
+Listening history, likes, and recommendation feedback stay on the phone. Freeify never
+signs in to YouTube and keeps no cookies.
 
-The workflow runs for relevant pushes to `main` or on manual request, has a
-20-minute timeout, and retains
-artifacts for seven days. GitHub provides a plan-dependent allowance for private
-repositories; macOS usage beyond that allowance may be charged. See
-[GitHub runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+## How Freeify gets onto the phone
 
-If a build fails, open the failing step and download the build diagnostics
-artifact. A local configuration check is not proof that the Swift app compiles;
-each updated version still needs a successful Mac build before device testing.
-
-### Builds with Claude Code
-
-The skill [.claude/skills/freeify-build](.claude/skills/freeify-build/SKILL.md)
-(`/freeify-build`) finds the build for a commit, waits for it, shows the failing
-step if it breaks, and downloads the IPA to Windows:
-
-- `C:\Users\Qi\Freeify-builds\<run number>\Freeify-unsigned.ipa`
-- `C:\Users\Qi\Freeify-builds\Freeify-latest.ipa`, always the newest, for AltServer
-
-Its script, `fetch_ipa.sh [commit]`, also runs on its own from WSL. It checks that
-the download is a valid package whose build number matches the run, and keeps the
-five newest builds, then prints the AltServer steps below. It needs `gh` signed in
-(command above). A downloaded IPA is not evidence of an installed or tested app.
-
-### YouTube tester (for Claude Code)
-
-`tools/youtube_tester/server.py` is a local MCP server that sends Freeify's exact
-YouTube requests from the PC: `search_songs`, `visitor_id`, `check_playback`
-(YouTube's status and reason, the audio formats Freeify would use, and a first-byte
-check of the audio URL), `ytdlp_compare`, and `network_info`. Use it first when
-playback breaks; `ROADMAP.md` lists what to try after. Its request values mirror
-`Freeify/YouTubeSearch.swift` (the `SYNC` block): change both together. It is a
-developer tool on the PC; the app never depends on it.
-
-Setup, once (already registered for this user):
+There's no Mac and no App Store. The app is compiled on GitHub's Mac, then installed and
+signed on the phone by SideStore with your free Apple ID.
 
 ```
-cd tools/youtube_tester
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-claude mcp add --scope user freeify-youtube-tester -- "$PWD/.venv/bin/python" "$PWD/server.py"
+push to main ─▶ GitHub Actions builds an unsigned IPA (kept 7 days)
+             ─▶ "Get Freeify" Shortcut on the iPhone downloads it
+             ─▶ SideStore signs and installs it (LocalDevVPN on)
+             ─▶ SideStore refreshes it before 7 days run out
 ```
 
-Update its yt-dlp now and then (`.venv/bin/pip install -U "yt-dlp[default]"`) so
-`ytdlp_compare` reflects YouTube's current state.
+### Every new version
 
-## Install on your iPhone
+1. A push to `main` that changes the app starts a build automatically
+   ([Actions tab](https://github.com/gobrin111/freeify-/actions)). Wait for the green check.
+2. On the iPhone, turn on **LocalDevVPN**.
+3. Run the **Get Freeify** Shortcut, pick **SideStore** in the share sheet, and confirm.
+   If SideStore isn't offered, open SideStore → **My Apps → +** and pick
+   `On My iPhone/Freeify/Freeify-unsigned.ipa`.
 
-The `.ipa` is **unsigned**. It cannot be installed merely by opening it in Files.
-Freeify is installed on the phone with [SideStore](https://docs.sidestore.io), which
-signs it with your Apple ID and refreshes it without the PC; AltServer on Windows is
-the backup.
+Updating keeps your library and saved songs.
 
-### SideStore
+### Every seven days
 
-Setup, once: install **LocalDevVPN** from the App Store, install SideStore from the PC
-with [iloader](https://docs.sidestore.io/docs/installation/prerequisites), and sign
-into SideStore. If sign-in fails with -80045 (Apple's October 2026 change), set
-SideStore's anisette server to **SideStore (New)** and reset adi.pb; don't retry
-repeatedly. A free Apple ID allows three sideloaded apps, SideStore included.
+Free Apple ID apps expire after seven days. Turn on LocalDevVPN and tap **Refresh All**
+in SideStore's **My Apps** before then. If the app does expire, the saved songs are still
+inside it; refresh or reinstall to open it again.
 
-Turn on LocalDevVPN whenever SideStore installs or refreshes. Refresh All in SideStore's
-**My Apps** before seven days pass; saved songs stay in the app if it expires.
+### One-time setup
 
-#### "Get Freeify" Shortcut
+1. Install **LocalDevVPN** from the App Store.
+2. Install SideStore from the PC with
+   [iloader](https://docs.sidestore.io/docs/installation/prerequisites) and sign in to
+   SideStore with your Apple ID. If sign-in fails with -80045, set SideStore's anisette
+   server to **SideStore (New)** and reset adi.pb; don't retry repeatedly. A free Apple
+   ID allows three sideloaded apps, SideStore included.
+3. Create the **Get Freeify** Shortcut (below).
 
-One tap downloads the newest successful build from GitHub and hands it to SideStore.
-GitHub requires a sign-in to download builds, so the Shortcut carries a token:
+#### The "Get Freeify" Shortcut
+
+GitHub requires a sign-in to download builds, so the Shortcut carries a read-only token:
 
 1. On github.com: **Settings → Developer settings → Personal access tokens →
    Fine-grained tokens → Generate new token**. Name it `Freeify Shortcut`, choose
    **Only select repositories → freeify-**, and under Repository permissions set
    **Actions: Read-only**. Copy the token. It lives only in the Shortcut, never in the
-   repository; it can do nothing but read builds.
+   repository, and can do nothing but read builds.
 2. In the Shortcuts app, create a shortcut named **Get Freeify** with these actions:
 
 | # | Action | Settings |
@@ -173,51 +138,54 @@ GitHub requires a sign-in to download builds, so the Shortcut carries a token:
 | 14 | **Save File** | to `On My iPhone/Freeify`; Ask Where to Save off, Overwrite on |
 | 15 | **Share** | Extracted file, then pick **SideStore** |
 
-3. Turn on LocalDevVPN, run **Get Freeify**, pick SideStore in the share sheet, and
-   confirm. If SideStore isn't in the share sheet, open SideStore → **My Apps → +** and
-   pick `On My iPhone/Freeify/Freeify-unsigned.ipa` (saved by step 14).
+If step 12 returns a short XML or 401 error instead of a zip, report it rather than
+retrying. If no build has run in seven days, start one (Actions tab → **Build Freeify
+for iPhone → Run workflow** on `main`), then run the Shortcut.
 
-If step 12 returns a short XML or 401 error instead of a zip, the redirect to GitHub's
-file storage kept the token; report it rather than retrying. Builds expire after seven
-days: with no build in that time, start one (README above), then run the Shortcut.
-GitHub lets any signed-in GitHub user download a public repository's builds; the
-Shortcut adds no new way in.
+### Backup: AltServer from the PC
 
-### AltServer (backup, from the PC)
+Use this if SideStore can't sign in or install. Set up AltStore Classic's AltServer on
+Windows once ([instructions](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows):
+iTunes and iCloud from Apple's website, device trust, Developer Mode, and iTunes'
+"Sync with this iPhone over Wi-Fi"). Then, for each build:
 
-Install from the PC with AltStore Classic's AltServer on Windows
-([setup instructions](https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows),
-including iTunes and iCloud from Apple's website, device trust, Developer Mode,
-and iTunes' "Sync with this iPhone over Wi-Fi").
+1. Download `Freeify-unsigned-<run number>` from the Actions run and extract it, or use
+   `C:\Users\Qi\Freeify-builds\Freeify-latest.ipa` if the build was already saved there.
+2. Unlock the iPhone, on the same Wi-Fi as the PC (or plugged in).
+3. AltServer tray icon → **Sideload .ipa…** → the iPhone →
+   `C:\Users\Qi\Freeify-builds\Freeify-latest.ipa`.
 
-For each new build (after `fetch_ipa.sh` saves it):
+### Keeping the library safe
 
-1. Unlock the iPhone, on the same Wi-Fi as the PC (or plugged in).
-2. Click the AltServer icon in the Windows system tray → **Sideload .ipa…** → the iPhone.
-3. Pick `C:\Users\Qi\Freeify-builds\Freeify-latest.ipa` and wait for AltServer's done message.
+- **Never delete the app** to fix a problem: saved audio lives inside it.
+- Switching signing tools (iloader, SideStore, AltServer) can make the library look
+  empty while the songs are still on the phone. Freeify keeps its library at a fixed
+  path (`Application Support/default.store`) and tries to recover one from an app group
+  if its own is empty; Settings → Library files shows what it finds.
+- Builds are deliberately not published as a public SideStore/AltStore source.
 
-Use it if SideStore can't sign in or install. It needs the iPhone plugged in or on
-the same Wi-Fi with Wi-Fi sync on, and AltServer signs through Apple's own iTunes and
-iCloud for Windows. Switching signing tools can open Freeify with an empty library
-while the songs are still on the phone; Freeify keeps its library at a fixed path
-(`Application Support/default.store`) so the signing tool can't move it. Don't delete
-the app to fix it: saved audio lives inside the app. Builds are deliberately not
-published as a public SideStore or AltStore source.
+## If YouTube stops working
+
+YouTube access is unofficial and can break when YouTube changes. Saved songs keep
+playing offline. If Freeify reports a sign-in, bot check, or request limit, wait rather
+than pressing Play repeatedly; signing into Safari or the YouTube app doesn't help
+Freeify. [ROADMAP.md](ROADMAP.md) §2 lists what to try, in order. In October 2026 a
+"Login is required" block was fixed by taking playback's visitor ID from a youtube.com
+watch page, and background requests are now paced 30 seconds apart.
 
 ## Phone checks
 
 After installing a new build:
 
-1. Search YouTube Music for a song title and download a result. Its cover art,
-   title, and artist should appear in the library and on the lock screen.
+1. Search YouTube Music and download a song. Its cover, title, and artist should appear
+   in the library and on the lock screen.
 2. Play it in airplane mode with the screen locked; lock-screen controls should work.
 3. Let a song finish; the next one should play. Try shuffle and repeat.
 4. Long-press a song, tap Play Next, and open the queue from the full-screen player.
 5. Like a song and add it to a playlist; both should persist after reopening Freeify.
-6. Remove a download and download it again from the library; remove a song entirely.
+6. Remove a download and download it again; remove a song entirely.
 7. Close and reopen Freeify; the last song should be paused where it stopped.
-8. In Discover, recently played songs should appear after playing a few. Charts,
-   new releases, and moods should open lists you can preview and download.
-9. After playing, liking, or downloading a few YouTube Music songs, pull down on
-   Discover; "Made for you" should show mixes. Long-press a song there and choose
-   Not Interested; it should disappear.
+8. In Discover, Recently played should fill after a few plays; charts, new releases,
+   and moods should open lists you can preview and download.
+9. After playing, liking, or downloading a few songs, pull down on Discover; Made for
+   you should show mixes. Not Interested should remove a song.
